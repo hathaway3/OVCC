@@ -15,8 +15,9 @@ WARN = -w # -Wall
 PTHREAD = -pthread
 
 ifeq ($(TARGETOS),Darwin)
-CFLAGS += -D DARWIN -I/opt/homebrew/include
-LDFLAGS += -L/opt/homebrew/lib
+BREW_PREFIX := $(shell brew --prefix 2>/dev/null || echo /usr/local)
+CFLAGS += -D DARWIN -I$(BREW_PREFIX)/include
+LDFLAGS += -L$(BREW_PREFIX)/lib
 endif
 
 SDLINC := $(shell pkg-config --cflags sdl2)

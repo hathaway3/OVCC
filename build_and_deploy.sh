@@ -63,10 +63,30 @@ with open('gui/drv_cocoa.m', 'w') as f:
     f.write(content)
 "
 
+# Fix fix-dylibs.sh to not fail if some dynamic libraries are missing
+python3 -c "
+with open('fix-dylibs.sh', 'r') as f:
+    content = f.read()
+wrapper = '''run_install_name_tool() {
+  local file=\"\${@: -1}\"
+  if [ -f \"\$file\" ]; then
+    sudo install_name_tool \"\$@\"
+  else
+    echo \"--> Skipping install_name_tool for non-existent file: \$file\"
+  fi
+}
+'''
+content = content.replace('#! /bin/bash', '#! /bin/bash\\n\\n' + wrapper)
+content = content.replace('sudo install_name_tool', 'run_install_name_tool')
+with open('fix-dylibs.sh', 'w') as f:
+    f.write(content)
+"
+
 chmod +x fix-dylibs.sh
 
 echo "--> Configuring libagar..."
-env CFLAGS="-I/opt/homebrew/include" ./configure --with-sdl2 --without-sdl
+BREW_PREFIX=$(brew --prefix 2>/dev/null || echo "/usr/local")
+env CFLAGS="-I${BREW_PREFIX}/include" ./configure --with-sdl2 --without-sdl
 
 echo "--> Compiling libagar..."
 make depend all
