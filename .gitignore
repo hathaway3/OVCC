@@ -25,4 +25,5 @@ Exec15/
 Exec16/
 vhds/
 testlib
-
+libagar-src/
+**/*.dsk

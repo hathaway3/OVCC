@@ -41,12 +41,31 @@ this is version 1.7.1 and contains fixes that affect ovcc.
 AGAR also has its dependancies so read the compilation documentation for the relevant platforms here https://libagar.org/docs/
 
 Build AGAR as per AGAR documentation with the exception/addition of the configuration options mentioned in the forementioned Docs.
-
 Compiling OVCC
 
-Once AGAR 1.7.1 and SDL2 are installed clone this OVCC repository change into the top directory make.
-  
+### Automated Build & Packaging (macOS)
+
+For macOS developers, a single script is available to automate installing system dependencies, compiling libagar (with macOS-specific compatibility patches), building the OVCC emulator and its peripheral modules, and packaging everything into a self-contained application bundle.
+
+To run the automated build, execute this script from the repository root:
+
+```bash
+$ ./build_and_deploy.sh
+```
+
+*(Note: Installing libagar to `/usr/local` and fixing library paths requires administrator privileges, so the script will prompt for your `sudo` password).*
+
+### Manual Compilation
+
+Once AGAR 1.7.1 and SDL2 are manually installed:
+
+1. Clone this OVCC repository.
+2. Change to the top-level directory.
+3. Run:
+
+```bash
 $ make
+```
 
 ------------
 

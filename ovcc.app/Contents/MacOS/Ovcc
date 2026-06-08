@@ -1,5 +1,25 @@
 #!/bin/bash
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-echo $DIR
+echo "App binary directory: $DIR"
 cd "${DIR}/.."
+
+# The parent directory of the ovcc.app bundle
+BUNDLE_PARENT_DIR="../../"
+
+# Automatically symlink standard ROMs from next to the app bundle if present
+for rom in coco3.rom disk11.rom rgbdos.rom; do
+  if [ -f "${BUNDLE_PARENT_DIR}/${rom}" ] && [ ! -f "${rom}" ]; then
+    echo "Linking ${rom} from bundle parent directory..."
+    ln -sf "${BUNDLE_PARENT_DIR}/${rom}" "${rom}"
+  fi
+done
+
+# Automatically symlink standard directories from next to the app bundle if present
+for folder in roms dsks vhds; do
+  if [ -d "${BUNDLE_PARENT_DIR}/${folder}" ] && [ ! -d "${folder}" ]; then
+    echo "Linking ${folder}/ directory from bundle parent directory..."
+    ln -sfh "${BUNDLE_PARENT_DIR}/${folder}" "${folder}"
+  fi
+done
+
 env DYLD_LIBRARY_PATH=libs ./ovcc
