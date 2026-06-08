@@ -43,6 +43,9 @@ AGAR also has its dependancies so read the compilation documentation for the rel
 Build AGAR as per AGAR documentation with the exception/addition of the configuration options mentioned in the forementioned Docs.
 Compiling OVCC
 
+> [!TIP]
+> **macOS Users**: See the dedicated [macOS Build and Run Guide](file:///Users/jimmiehathaway/OVCC/README_MAC.md) for detailed prerequisites, automated and manual build instructions, asset management, and troubleshooting.
+
 ### Automated Build & Packaging (macOS)
 
 For macOS developers, a single script is available to automate installing system dependencies, compiling libagar (with macOS-specific compatibility patches), building the OVCC emulator and its peripheral modules, and packaging everything into a self-contained application bundle.

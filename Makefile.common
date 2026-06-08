@@ -31,6 +31,22 @@ ifneq ($(TARGETOS),Darwin)
 LIBS := $(LIBS) -lrt
 endif
 
+# Dynamic versioning based on Git tags/commits
+GIT_VERSION := $(shell git describe --tags --long --dirty 2>/dev/null)
+ifeq ($(GIT_VERSION),)
+  BASE_VERSION = 1.6.1
+  COMMIT_COUNT := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
+  COMMIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  GIT_STATUS := $(shell git status --porcelain 2>/dev/null)
+  DIRTY :=
+  ifneq ($(GIT_STATUS),)
+    DIRTY = -dirty
+  endif
+  GIT_VERSION = $(BASE_VERSION)-$(COMMIT_COUNT)-g$(COMMIT_SHA)$(DIRTY)
+endif
+
+CFLAGS += -DOVCC_VERSION=\"$(GIT_VERSION)\"
+
 CFLAGS += $(DEBUG) $(OPT) $(WARN) $(IDIR)
 
 LDFLAGS += $(LIBS) #-Wl,-export-all-symbols # -export-dynamic

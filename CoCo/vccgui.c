@@ -1633,7 +1633,11 @@ void About(AG_Event *ev)
     AG_MPane *mpane = AG_MPaneNew(AboutWin, AG_MPANE1T2B, AG_MPANE_EXPAND|AG_MPANE_FORCE_DIV);
 
     AG_Label *lbl1 = AG_LabelNewPolled(mpane->panes[0], AG_LABEL_FRAME | AG_LABEL_EXPAND, "%s", 
+#ifdef OVCC_VERSION
+        "OVCC " OVCC_VERSION "\n"
+#else
         "OVCC 1.6.1\n"
+#endif
         "Walter Zambotti\n"
         "using AGAR 1.7.1 GUI\n"
         "Forked from VCC 2.01B (1.43)\n"
