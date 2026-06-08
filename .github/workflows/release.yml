@@ -28,15 +28,33 @@ jobs:
           chmod +x build_and_deploy.sh
           ./build_and_deploy.sh
 
+      - name: Get dynamic version
+        id: get_version
+        run: |
+          GIT_VERSION=$(git describe --tags --long --dirty 2>/dev/null)
+          if [ -z "$GIT_VERSION" ]; then
+            BASE_VERSION="1.6.1"
+            COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+            COMMIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+            GIT_STATUS=$(git status --porcelain 2>/dev/null)
+            DIRTY=""
+            if [ -n "$GIT_STATUS" ]; then
+              DIRTY="-dirty"
+            fi
+            GIT_VERSION="${BASE_VERSION}-${COMMIT_COUNT}-g${COMMIT_SHA}${DIRTY}"
+          fi
+          echo "version=${GIT_VERSION}" >> $GITHUB_OUTPUT
+
       - name: Compress application bundle
         run: |
           # Use -y to preserve symlinks in framework directories
-          zip -y -r ovcc-macos.zip ovcc.app
+          zip -y -r ovcc-macos-${{ steps.get_version.outputs.version }}.zip ovcc.app
 
       - name: Create Release and Upload Asset
         uses: softprops/action-gh-release@v2
         with:
-          files: ovcc-macos.zip
+          files: ovcc-macos-${{ steps.get_version.outputs.version }}.zip
+          name: Release ${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
           generate_release_notes: true
