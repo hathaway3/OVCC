@@ -1,4 +1,4 @@
-# OVCC 1.6.1
+# OVCC [![Latest Release](https://img.shields.io/github/v/release/hathaway3/OVCC)](https://github.com/hathaway3/OVCC/releases)
 
 The portable and open Virtual Colo(u)r Computer. GNU General Public License.
 
