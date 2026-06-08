@@ -22,8 +22,19 @@ if ! command -v brew &> /dev/null; then
 fi
 
 # 3. Install Homebrew packages
-echo "--> Checking and installing system dependencies (sdl2, dylibbundler, pkgconf)..."
-brew install sdl2 dylibbundler pkg-config
+echo "--> Checking and installing system dependencies (sdl2, dylibbundler, pkg-config)..."
+install_brew_dep() {
+  if brew list "$1" &> /dev/null; then
+    echo "--> $1 is already installed."
+  else
+    echo "--> Installing $1..."
+    brew install "$1" || echo "--> Warning: Failed to install $1, proceeding anyway..."
+  fi
+}
+
+install_brew_dep sdl2
+install_brew_dep dylibbundler
+install_brew_dep pkg-config
 
 # 4. Clone and patch libagar
 echo "--> Cloning libagar from GitHub..."
