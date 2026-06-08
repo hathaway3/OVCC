@@ -202,6 +202,34 @@ keytranslationentry_t keyTranslationsCoCoAGAR[] =
 	{ AG_KEY_LCTRL,      0,             64,     4,     0,    0 }, //   CTRL
 	{ AG_KEY_LSHIFT,     0,             64,     7,     0,    0 }, //   SHIFT (the code converts AG_KEY_RSHIFT to AG_KEY_LSHIFT)
 
+#ifdef DARWIN
+	// added for latest MacOS
+	{ AG_KEY_EXCLAIM,    AG_KEY_LSHIFT, 16,     1,    64,    7 }, //   !
+	{ AG_KEY_QUOTEDBL,   AG_KEY_LSHIFT, 16,     2,    64,    7 }, //   "
+	{ AG_KEY_HASH,       AG_KEY_LSHIFT, 16,     3,    64,    7 }, //   #
+	{ AG_KEY_DOLLAR,     AG_KEY_LSHIFT, 16,     4,    64,    7 }, //   $
+	{ AG_KEY_PERCENT,    AG_KEY_LSHIFT, 16,     5,    64,    7 }, //   %
+	{ AG_KEY_AMPERSAND,  AG_KEY_LSHIFT, 16,     6,    64,    7 }, //   &
+	{ AG_KEY_QUOTE,      AG_KEY_LSHIFT, 16,     7,    64,    7 }, //   '
+	{ AG_KEY_LEFTPAREN,  AG_KEY_LSHIFT, 32,     0,    64,    7 }, //   (
+	{ AG_KEY_RIGHTPAREN, AG_KEY_LSHIFT, 32,     1,    64,    7 }, //   )
+	{ AG_KEY_ASTERISK,   AG_KEY_LSHIFT, 32,     2,    64,    7 }, //   *
+	{ AG_KEY_PLUS,       AG_KEY_LSHIFT, 32,     3,    64,    7 }, //   +
+	{ AG_KEY_COLON,      AG_KEY_LSHIFT, 32,     2,     0,    0 }, //   :
+	{ AG_KEY_LESS,       AG_KEY_LSHIFT, 32,     4,    64,    7 }, //   <
+	{ AG_KEY_GREATER,    AG_KEY_LSHIFT, 32,     6,    64,    7 }, //   >
+	{ AG_KEY_QUESTION,   AG_KEY_LSHIFT, 32,     7,    64,    7 }, //   ?
+	{ AG_KEY_AT,         AG_KEY_LSHIFT,  1,     0,     0,    0 }, //   @
+	{ AG_KEY_CARET,      AG_KEY_LSHIFT, 16,     7,    64,    4 }, //   ^ (CoCo CTRL 7)
+	{ AG_KEY_UNDERSCORE, AG_KEY_LSHIFT, 32,     5,    64,    4 }, //   _ (underscore) (CoCo CTRL -)
+	{ AG_KEY_BACKQUOTE,  AG_KEY_LSHIFT, 16,     3,    64,    4 }, //   ~ (tilde) (CoCo CTRL 3)
+	{ AG_KEY_LEFTBRACE,  AG_KEY_LSHIFT, 64,     4,    32,    4 }, //   { (CoCo CTRL ,)
+	{ AG_KEY_PIPE,       AG_KEY_LSHIFT, 16,     1,    64,    4 }, //   | (Pipe) (CoCo CTRL 1)
+	{ AG_KEY_RIGHTBRACE, AG_KEY_LSHIFT, 64,     4,    32,    6 }, //   } (CoCo CTRL .)
+	{ AG_KEY_TILDE,      AG_KEY_LSHIFT, 16,     3,    64,    4 }, //   ~ (tilde) (CoCo CTRL 3)
+	// end of addition
+#endif
+
 	{ 0,                 0,              0,     0,     0,    0 }  // terminator
 };
 
