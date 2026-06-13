@@ -39,10 +39,18 @@ static char Extension[MAX_PATH]="";
 unsigned char QuickLoad(char *BinFileName)
 {
 	unsigned int MemIndex=0;
+	unsigned char result = 0;
 
-	
 	if (!AG_FileExists(BinFileName))
 		return(1);				//File Not Found
+
+	strcpy(Extension,PathFindExtension(BinFileName));
+	SDL_strlwr(Extension);
+	if ( (strcmp(Extension,".rom")==0) | (strcmp(Extension,".ccc")==0))
+	{
+		InsertModule (BinFileName);
+		return(0);
+	}
 
 	BinImage=fopen(BinFileName,"rb");
 	if (BinImage==NULL)
@@ -52,20 +60,22 @@ unsigned char QuickLoad(char *BinFileName)
 	if (MemImage==NULL)
 	{
 		_MessageBox("Can't alocate ram");
+		fclose(BinImage);
+		BinImage = NULL;
 		return(3);				//Not enough memory
 	}
-	strcpy(Extension,PathFindExtension(BinFileName));
-	SDL_strlwr(Extension);
-	if ( (strcmp(Extension,".rom")==0) | (strcmp(Extension,".ccc")==0))
-	{
-		InsertModule (BinFileName);
-		return(0);
-	}
+
 	if ( strcmp(Extension,".bin")==0)
 	{
 		while (true)
 		{
 			temp=fread(MemImage,sizeof(char),5,BinImage);
+			if (temp < 5)
+			{
+				_MessageBox(".Bin file is corrupt or truncated");
+				result = 3;
+				goto cleanup;
+			}
 			FileType=MemImage[0];
 			FileLenth=(MemImage[1]<<8) + MemImage[2];
 			StartAddress=(MemImage[3]<<8)+MemImage[4];
@@ -74,6 +84,12 @@ unsigned char QuickLoad(char *BinFileName)
 			{
 			case 0:
 				temp=fread(&MemImage[0],sizeof(char),FileLenth,BinImage);
+				if (temp < FileLenth)
+				{
+					_MessageBox(".Bin file is corrupt or truncated");
+					result = 3;
+					goto cleanup;
+				}
 				for (MemIndex=0;MemIndex<FileLenth;MemIndex++) //Kluge!!!
 					MemWrite8(MemImage[MemIndex],StartAddress++);
 				break;
@@ -82,23 +98,36 @@ unsigned char QuickLoad(char *BinFileName)
 				if ( (XferAddress==0) | (XferAddress >32767) |(FileLenth != 0) )
 				{
 					_MessageBox(".Bin file is corrupt or invalid Transfer Address");
-					return(3);
+					result = 3;
+					goto cleanup;
 				}
-				fclose(BinImage);
-				free(MemImage);
 				CPUForcePC(XferAddress);
-				return(0);				
+				result = 0;
+				goto cleanup;
 				break;
 			default:
 				_MessageBox(".Bin file is corrupt or invalid");
-				fclose(BinImage);
-				free(MemImage);
-				return(3);
+				result = 3;
+				goto cleanup;
 				break;
 			} //End Switch
 		} //End While
 	} // End if
-	return(255); //Invalid File type
+	else
+	{
+		result = 255; //Invalid File type
+	}
+
+cleanup:
+	if (BinImage != NULL) {
+		fclose(BinImage);
+		BinImage = NULL;
+	}
+	if (MemImage != NULL) {
+		free(MemImage);
+		MemImage = NULL;
+	}
+	return result;
 } //End Proc
 
 unsigned short GetXferAddr(void)

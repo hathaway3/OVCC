@@ -1802,8 +1802,12 @@ void LockTexture(AG_Event *event)
 void WindowDetached(AG_Event *event)
 {
     extern void UnloadDll(short int);
+    extern bool BinaryRunning;
 
     SystemState2 *SState = AG_PTR(1);
+
+    BinaryRunning = false;
+    AG_Delay(100);
 
     AG_ThreadCancel(SState->emuThread);
 #ifdef ISOCPU

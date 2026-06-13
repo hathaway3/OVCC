@@ -124,37 +124,75 @@ void PathStripPath (char *TextBuffer)
 BOOL PathRemoveFileSpec(char *Path)
 {
 	char dirdelim = GetPathDelim();
+	int len = (int)strlen(Path);
+	if (len == 0 || len > MAX_PATH)
+		return false;
 
-	int Index=strlen(Path),Lenth=Index;
-	if ( (Index==0) | (Index > MAX_PATH))
-		return(false);
-	
-	while ( (Index>0) & (Path[Index] != dirdelim))
-		Index--;
-	while ( (Index>0) & (Path[Index] == dirdelim))
-		Index--;
-	if (Index<0)
-		return(false);
-	Path[Index+1]=0;
-	return( !(strlen(Path) == Lenth));
+	int index = len - 1;
+	// Find the last delimiter
+	while (index >= 0 && Path[index] != dirdelim) {
+		index--;
+	}
+
+	if (index < 0) {
+		// No directory delimiter found, so no folder path to keep.
+		// Leave the path unchanged.
+		return false;
+	}
+
+	// Remove trailing delimiters
+	while (index > 0 && Path[index] == dirdelim) {
+		index--;
+	}
+
+	Path[index + 1] = '\0';
+	return true;
 }		
 
 BOOL PathRemoveExtension(char *Path)
 {
-	size_t Index=strlen(Path),Lenth=Index;
-	if ( (Index==0) | (Index > MAX_PATH))
-		return(false);
-	
-	while ( (Index>0) & (Path[Index--] != '.') );
-	Path[Index+1]=0;
-	return( !(strlen(Path) == Lenth));
+	int len = (int)strlen(Path);
+	if (len == 0 || len > MAX_PATH)
+		return false;
+
+	char dirdelim = GetPathDelim();
+	int index = len - 1;
+
+	// Search backwards for a dot, but stop if we hit a path delimiter
+	while (index >= 0 && Path[index] != '.') {
+		if (Path[index] == dirdelim) {
+			break;
+		}
+		index--;
+	}
+
+	if (index >= 0 && Path[index] == '.') {
+		Path[index] = '\0';
+		return true;
+	}
+
+	return false;
 }
 
 char* PathFindExtension(char *Path)
 {
-	size_t Index=strlen(Path),Lenth=Index;
-	if ( (Index==0) | (Index > MAX_PATH))
-		return(&Path[strlen(Path)+1]);
-	while ( (Index>0) & (Path[Index--] != '.') );
-	return(&Path[Index+1]);
+	int len = (int)strlen(Path);
+	if (len == 0 || len > MAX_PATH)
+		return &Path[len];
+
+	char dirdelim = GetPathDelim();
+	int index = len - 1;
+
+	while (index >= 0 && Path[index] != '.') {
+		if (Path[index] == dirdelim) {
+			break;
+		}
+		index--;
+	}
+
+	if (index >= 0 && Path[index] == '.') {
+		return &Path[index];
+	}
+
+	return &Path[len]; // Return pointer to null terminator
 }

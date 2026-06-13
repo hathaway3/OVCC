@@ -431,7 +431,7 @@ void UnloadDll(short int config)
 		return;
 	}
 	
-	if (config && ConfigModule != NULL) 
+	if (ConfigModule != NULL) 
 	{
 		ConfigModule(0); // 0 = Release Resources (Menus etc)
 	}

@@ -240,7 +240,8 @@ int MountTape( char *FileName)	//Return 1 on sucess 0 on fail
 		if (CasBuffer!=NULL)
 			free(CasBuffer);
 
-		CasBuffer=(unsigned char *)malloc(WRITEBUFFERSIZE);
+		unsigned long allocSize = TotalSize > WRITEBUFFERSIZE ? TotalSize : WRITEBUFFERSIZE;
+		CasBuffer=(unsigned char *)malloc(allocSize);
 		AG_Seek(TapeHandle, 0, AG_SEEK_SET);
 		AG_ReadP(TapeHandle, CasBuffer, TotalSize, &BytesMoved);
 		if (BytesMoved!=TotalSize)
@@ -257,6 +258,11 @@ void CloseTapeFile(void)
 	AG_CloseDataSource(TapeHandle);
 	TapeHandle=NULL;
 	TotalSize=0;
+	if (CasBuffer != NULL)
+	{
+		free(CasBuffer);
+		CasBuffer = NULL;
+	}
 }
 
 void GetTapeName(char *Name)

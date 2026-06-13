@@ -264,28 +264,31 @@ float RenderFrame (SystemState2 *RFState2, unsigned long DCnt)
 
 void *CPUloop (void *p)
 {
+	extern bool BinaryRunning;
 	SystemState2 *RFState2 = p;
 	long long cputime = 16666667;
 	unsigned long long StartTime, EndTime, TargetTime;
 	long timeavg, finetune=0;
 	short lc;
 
-	while (CPUExec == NULL) { AG_Delay(1); } // The Render loop resets the system and the CPU must wait for reset 1st time;
+	while (BinaryRunning && CPUExec == NULL) { AG_Delay(1); } // The Render loop resets the system and the CPU must wait for reset 1st time;
 
-	while(1)
+	while(BinaryRunning)
 	{
-		while(waitsync) {} waitsync=1; // sync with RenderFrame()
+		while(BinaryRunning && waitsync) {} 
+		if (!BinaryRunning) break;
+		waitsync=1; // sync with RenderFrame()
 		timeavg = 0;
 		StartTime = SDL_GetPerformanceCounter();
 		// total iterations = 13 blanking lines + 4 non boarder lines + TopBoarder-4 lines + Active display lines + Bottom boarder lines + 6 vertical retrace lines
 		// or TopBoarder + LinesPerScreen + Bottom Boarder + 19
-		for(lc=0 ; lc < TopBoarder+LinesperScreen+BottomBoarder+19 ; lc++)
+		for(lc=0 ; (BinaryRunning && lc < TopBoarder+LinesperScreen+BottomBoarder+19) ; lc++)
 		{
 			TargetTime = SDL_GetPerformanceCounter() + lPicosPerLine - finetune;
 			CPUCycle();
 			EndTime = SDL_GetPerformanceCounter();
 			timeavg += TargetTime - EndTime;
-			while(EndTime < TargetTime) { EndTime = SDL_GetPerformanceCounter(); }
+			while(BinaryRunning && EndTime < TargetTime) { EndTime = SDL_GetPerformanceCounter(); }
 		}
 		timeavg /= lc;
 		if (timeavg < 0) CPUConfigSpeedDec(); else if (timeavg > 0) CPUConfigSpeedInc();

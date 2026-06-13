@@ -50,11 +50,11 @@ GIT_VERSION_FILE := $(dir $(lastword $(MAKEFILE_LIST)))git_version.txt
 
 # Generate git_version.txt dynamically if it doesn't exist or if version changed
 _dummy := $(shell \
-	echo '$(GIT_VERSION)' > $(GIT_VERSION_FILE).tmp; \
-	if [ ! -f $(GIT_VERSION_FILE) ] || ! cmp -s $(GIT_VERSION_FILE).tmp $(GIT_VERSION_FILE); then \
-		mv $(GIT_VERSION_FILE).tmp $(GIT_VERSION_FILE); \
+	echo '$(GIT_VERSION)' > $(GIT_VERSION_FILE).tmp.$$$$; \
+	if [ ! -f $(GIT_VERSION_FILE) ] || ! cmp -s $(GIT_VERSION_FILE).tmp.$$$$ $(GIT_VERSION_FILE); then \
+		mv $(GIT_VERSION_FILE).tmp.$$$$ $(GIT_VERSION_FILE); \
 	else \
-		rm -f $(GIT_VERSION_FILE).tmp; \
+		rm -f $(GIT_VERSION_FILE).tmp.$$$$; \
 	fi \
 )
 
@@ -89,8 +89,22 @@ $(OBJS):
 $(ODIR)/AGARInterface.o: $(GIT_VERSION_FILE)
 $(ODIR)/vccgui.o: $(GIT_VERSION_FILE)
 
+ifeq ($(TARGETOS),Darwin)
+NO_DEFAULT_INSTALL = 1
+endif
+ifeq ($(TARGETOS),Mingw)
+NO_DEFAULT_INSTALL = 1
+endif
+ifeq ($(TARGET),ovcc)
+NO_DEFAULT_INSTALL = 1
+endif
+
 install: $(TARGET)
+
+ifndef NO_DEFAULT_INSTALL
+install:
 	install -D --mode=0644 $(TARGET) $(LIBDIR)/$(TARGET)
+endif
 
 clean:
 	rm -f $(ODIR)/*.o $(TARGET) testlib $(GIT_VERSION_FILE)

@@ -539,13 +539,13 @@ void *EmuLoop(void *p)
 
 	//printf("Entering Emu Loop : Skip %i - Reset : %i\n", (int)EmuState2.FrameSkip, (int)EmuState2.ResetPending);
 
-	while (1) 
+	while (BinaryRunning) 
 	{
 		if (FlagEmuStop==TH_REQWAIT)
 		{
 			//printf("delaying\n");
 			FlagEmuStop=TH_WAITING;	//Signal Main thread we are waiting
-			while(FlagEmuStop==TH_WAITING)
+			while(BinaryRunning && FlagEmuStop==TH_WAITING)
 				AG_Delay(1);
 			//printf("finished delaying\n");
 		}
