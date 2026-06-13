@@ -400,6 +400,11 @@ INIman *GetIniMan(void)
 	return (iniman);
 }
 
+void InitConfigEdit(void)
+{
+	TempConfig = CurrentConfig;
+}
+
 void UpdateConfig (void)
 {
 	SetResizeAGAR(CurrentConfig.Resize);

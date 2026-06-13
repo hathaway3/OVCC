@@ -1021,6 +1021,23 @@ void Configure(AG_Event *ev)
     AG_Notebook *nb;
     AG_NotebookTab *tab;
 
+    extern void InitConfigEdit(void);
+    InitConfigEdit();
+
+    MonitorType = (int)CurrentConfig.MonitorType;
+    frameSkip = (int)CurrentConfig.FrameSkip;
+    scanLines = (int)CurrentConfig.ScanLines;
+    forceAspect = (int)CurrentConfig.Aspect;
+    allowResize = (int)CurrentConfig.Resize;
+    throttleSpeed = (int)CurrentConfig.SpeedThrottle;
+    autoStartEmu = (int)CurrentConfig.AutoStart;
+    autoStartCart = (int)CurrentConfig.CartAutoStart;
+    MemSize = (int)CurrentConfig.RamSize;
+    CPU = (int)CurrentConfig.CpuType;
+    MMU = (int)CurrentConfig.MmuType;
+    keyboardMap = (int)CurrentConfig.KeyMap;
+    cpuOCval = (double)CurrentConfig.CPUMultiplyer * cpuMin;
+
     if (win != NULL)
     {
         AG_WindowShow(win);

@@ -258,12 +258,18 @@ void DoSoftReset()
 
 void ToggleMonitorType()
 {
-	SetMonitorTypeAGAR(!SetMonitorTypeAGAR(QUERY));
+	extern STRConfig CurrentConfig;
+	unsigned char newType = !SetMonitorTypeAGAR(QUERY);
+	SetMonitorTypeAGAR(newType);
+	CurrentConfig.MonitorType = newType;
 }
 
 void ToggleThrottleSpeed()
 {
-	SetSpeedThrottle(!SetSpeedThrottle(QUERY));
+	extern STRConfig CurrentConfig;
+	unsigned char newThrottle = !SetSpeedThrottle(QUERY);
+	SetSpeedThrottle(newThrottle);
+	CurrentConfig.SpeedThrottle = newThrottle;
 }
 
 void ToggleScreenStatus()
@@ -301,9 +307,15 @@ void SetCPUMultiplyerFlag (unsigned char double_speed)
 	EmuState2.DoubleSpeedFlag=double_speed;
 	EmuState2.CPUCurrentSpeed= .894;
 	if (EmuState2.DoubleSpeedFlag)
-		clockspeed =  EmuState2.DoubleSpeedMultiplyer * EmuState2.TurboSpeedFlag;
+	{
+		unsigned short multiplier = EmuState2.DoubleSpeedMultiplyer < 2 ? 2 : EmuState2.DoubleSpeedMultiplyer;
+		clockspeed =  multiplier * EmuState2.TurboSpeedFlag;
+	}
 	if (EmuState2.DoubleSpeedFlag)
-		EmuState2.CPUCurrentSpeed *= (EmuState2.DoubleSpeedMultiplyer*EmuState2.TurboSpeedFlag);
+	{
+		unsigned short multiplier = EmuState2.DoubleSpeedMultiplyer < 2 ? 2 : EmuState2.DoubleSpeedMultiplyer;
+		EmuState2.CPUCurrentSpeed *= (multiplier*EmuState2.TurboSpeedFlag);
+	}
 	SetClockSpeed(clockspeed); 
 	return;
 }
@@ -313,10 +325,16 @@ void SetTurboMode(unsigned char data)
 	unsigned short clockspeed = 1;
 	EmuState2.TurboSpeedFlag=(data&1)+1;
 	if (EmuState2.DoubleSpeedFlag)
-		clockspeed = EmuState2.DoubleSpeedMultiplyer * EmuState2.TurboSpeedFlag;
+	{
+		unsigned short multiplier = EmuState2.DoubleSpeedMultiplyer < 2 ? 2 : EmuState2.DoubleSpeedMultiplyer;
+		clockspeed = multiplier * EmuState2.TurboSpeedFlag;
+	}
 	EmuState2.CPUCurrentSpeed= .894;
 	if (EmuState2.DoubleSpeedFlag)
-		EmuState2.CPUCurrentSpeed*=(EmuState2.DoubleSpeedMultiplyer*EmuState2.TurboSpeedFlag);
+	{
+		unsigned short multiplier = EmuState2.DoubleSpeedMultiplyer < 2 ? 2 : EmuState2.DoubleSpeedMultiplyer;
+		EmuState2.CPUCurrentSpeed*=(multiplier*EmuState2.TurboSpeedFlag);
+	}
 	SetClockSpeed(clockspeed); 
 	return;
 }

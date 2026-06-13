@@ -289,26 +289,33 @@ void BaseComboSelected(AG_Event *event)
 	}
 }
 
-void PopulateBaseAddresses(AG_Tlist *list)
+void PopulateBaseAddressesCombo(AG_Event *event)
 {
+	AG_Combo *com = AG_COMBO_SELF();
 	AG_TlistItem *listItem;
 
-    listItem = AG_TlistAddS(list, NULL, "40"); listItem->v = 0;
-    listItem = AG_TlistAddS(list, NULL, "50"); listItem->v = 1;
-    listItem = AG_TlistAddS(list, NULL, "60"); listItem->v = 2;
-    listItem = AG_TlistAddS(list, NULL, "70"); listItem->v = 3;
+	AG_ComboSizeHint(com, "40", 4);
+
+	listItem = AG_TlistAddS(com->list, NULL, "40"); listItem->v = 0;
+	listItem = AG_TlistAddS(com->list, NULL, "50"); listItem->v = 1;
+	listItem = AG_TlistAddS(com->list, NULL, "60"); listItem->v = 2;
+	listItem = AG_TlistAddS(com->list, NULL, "70"); listItem->v = 3;
+
+	AG_TlistItem *item = AG_TlistFindByIndex(com->list, BaseAddr);
+	if (item != NULL) AG_ComboSelect(com, item);
 }
 
 void ConfigIDE(AG_Event *event)
 {
 	AG_Window *win;
+	const char *BaseStrings[] = {"40", "50", "60", "70"};
 
     if ((win = AG_WindowNewNamedS(0, "Glenside IDE Config")) == NULL)
     {
         return;
     }
 
-    AG_WindowSetGeometryAligned(win, AG_WINDOW_ALIGNMENT_NONE, 440, 294);
+    AG_WindowSetGeometryAligned(win, AG_WINDOW_ALIGNMENT_NONE, 440, 120);
     AG_WindowSetCaptionS(win, "Glenside IDE Config");
     AG_WindowSetCloseAction(win, AG_WINDOW_DETACH);
 
@@ -319,11 +326,9 @@ void ConfigIDE(AG_Event *event)
 	hbox = AG_BoxNewHoriz(win, AG_BOX_EXPAND | AG_BOX_FRAME);
 	vbox = AG_BoxNewVert(hbox, AG_BOX_EXPAND);
 
-	AG_Combo *comBase = AG_ComboNew(vbox, AG_COMBO_HFILL, NULL);
-	AG_ComboSizeHint(comBase, "40", 4);
-	PopulateBaseAddresses(comBase->list);
-	AG_TlistItem *item = AG_TlistFindByIndex(comBase->list, BaseAddr+1);
-	if (item != NULL) AG_ComboSelect(comBase, item);
+	AG_Combo *comBase = AG_ComboNewS(vbox, AG_COMBO_HFILL, "Base Address:");
+	AG_TextboxSetString(comBase->tbox, BaseStrings[BaseAddr & 3]);
+	AG_SetEvent(comBase, "combo-expanded", PopulateBaseAddressesCombo, NULL);
 	AG_SetEvent(comBase, "combo-selected", BaseComboSelected, NULL);
 
 	// Check Box items

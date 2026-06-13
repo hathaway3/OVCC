@@ -22,6 +22,9 @@ $(DIRS):
 
 install: ACTION = install
 install: subdirs
+ifeq ($(TARGETOS),Darwin)
+	touch ovcc.app
+endif
 
 clean: ACTION = clean
 clean: subdirs
