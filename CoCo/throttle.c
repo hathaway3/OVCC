@@ -22,6 +22,7 @@ This file is part of VCC (Virtual Color Computer).
 #include <sys/time.h>
 #include <time.h>
 #include <sched.h>
+#include <mach/mach_time.h>
 #include "throttle.h"
 #include "audio.h"
 #include "defines.h"
@@ -75,15 +76,35 @@ void EndRender(unsigned char Skip)
 	return;
 }
 
+// Sleep the thread until 'targetPerf' (SDL_GetPerformanceCounter units),
+// returning idle time to the OS instead of busy-spinning the whole frame.
+// Coarse sleep with mach_wait_until() for the bulk, then a short fine-spin
+// (SpinMarginNs) for frame-accurate timing. Correct on Intel and Apple Silicon.
+static void WaitUntil(unsigned long targetPerf)
+{
+	static const unsigned long SpinMarginNs = 500000; // 0.5ms fine-spin guard
+	static mach_timebase_info_data_t tb = {0, 0};
+	if (tb.denom == 0) mach_timebase_info(&tb);
+
+	unsigned long now = SDL_GetPerformanceCounter();
+	if (now >= targetPerf) return;
+
+	// Remaining perf ticks -> nanoseconds (fMasterClock = perf frequency).
+	double remNs = (double)(targetPerf - now) * 1.0e9 / fMasterClock;
+	if (remNs > (double)SpinMarginNs)
+	{
+		uint64_t sleepNs = (uint64_t)(remNs - (double)SpinMarginNs);
+		uint64_t sleepAbs = sleepNs * tb.denom / tb.numer; // ns -> mach absolute
+		mach_wait_until(mach_absolute_time() + sleepAbs);
+	}
+
+	// Fine-spin the remaining margin (or any sleep overshoot exits immediately).
+	while (SDL_GetPerformanceCounter() < targetPerf) {}
+}
+
 void FrameWait(void)
 {
-	//unsigned long long TwoMs = OneMs * 1;
-	//unsigned long long Tt_minus_2ms = TargetTime - TwoMs;
 	CurrentTime = SDL_GetPerformanceCounter();
-	//int msDelays = (Tt_minus_2ms - CurrentTime) / OneMs;
-	struct timespec duration, dummy;
-
-	//delayed = timems();
 
 	if (CurrentTime > TargetTime)
 	{
@@ -106,55 +127,10 @@ void FrameWait(void)
 	CPUConfigSpeedInc();
 	// fprintf(stderr, "^");
 
-	// Use nanosleep to delay
-
-	unsigned long /*long*/ tmpt = TargetTime - CurrentTime;
-	unsigned long /*long*/ lagavg = LagCnt ? LagTime / LagCnt : 0;
-	if (lagavg < tmpt)
-	{
-		tmpt -= lagavg;
-		duration.tv_sec = 0;
-		duration.tv_nsec = tmpt;
-		nanosleep(&duration, &dummy);
-	}
-
-
-	// Use AG_Delay or SDL_Delay ro delay
-
-	// if (msDelays > 1)
-	// {
-	// 	AG_Delay(msDelays);
-	// }
+	// Sleep (not spin) until the frame deadline, returning time to the OS.
+	WaitUntil(TargetTime);
 
 	CurrentTime = SDL_GetPerformanceCounter();
-
-	// Use Loop with AG_Delay or SDL_Delay to delay
-
-	// while (CurrentTime < Tt_minus_2ms)	//If we have more that 2Ms till the end of the frame
-	// {
-	// 	AG_Delay(1);	//Give about 1Ms back to the system
-	// 	CurrentTime = SDL_GetPerformanceCounter();	//And check again
-	// }
-
-	if (GetSoundStatusSDL())	//Lean on the sound card a bit for timing
-	{
-		// PurgeAuxBufferSDL();
-		// if (FrameSkip==1)
-		// {
-		// 	if (GetFreeBlockCountSDL()>AUDIOBUFFERS/2)		//Dont let the buffer get lest that half full
-		// 		return;
-		// 	while (GetFreeBlockCount() < 1);	// Dont let it fill up either
-		// }
-
-	}
-
-	// Use busy CPU with high resolution counter to delay
-
-	while (CurrentTime < TargetTime)	//Poll Until frame end.
-	{
-		CurrentTime = SDL_GetPerformanceCounter();
-	}
-
 	LagTime += CurrentTime - TargetTime;
 	LagCnt++;
 	//fprintf(stderr, "(%ld,%ld)", LagTime);
