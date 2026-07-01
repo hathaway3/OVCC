@@ -40,6 +40,7 @@ This file is part of VCC (Virtual Color Computer).
 	static double LinesPerSecond= TARGETFRAMERATE * LINESPERSCREEN;
 	static double PicosPerLine = PICOSECOND / (TARGETFRAMERATE * LINESPERSCREEN);
 	static double CyclesPerLine = ((COLORBURST/4)*(TARGETFRAMERATE/FRAMESPERSECORD)) / (TARGETFRAMERATE * LINESPERSCREEN);
+	static double CyclesPerPico=0;	// = CyclesPerLine * OverClock / PicosPerLine; recomputed in SetClockSpeed()
 	static double CycleDrift=0;
 	static double CyclesThisLine=0;
 	static unsigned int StateSwitch=0;
@@ -303,6 +304,9 @@ void *CPUloop (void *p)
 void SetClockSpeed(unsigned short Cycles)
 {
 	OverClock=Cycles;
+	// Hoist the per-scanline loop-invariant out of CPUCycle(): this only changes
+	// when the clock speed/overclock changes, so compute it once here.
+	CyclesPerPico = CyclesPerLine * OverClock / PicosPerLine;
 	return;
 }
 
@@ -372,7 +376,7 @@ int CPUCycle(void)
 		{
 			case 0:		//No interupts this line
 				//WriteLog("0", TOCONS);
-				CyclesThisLine= CycleDrift + (PicosThisLine * CyclesPerLine * OverClock/PicosPerLine);
+				CyclesThisLine= CycleDrift + (PicosThisLine * CyclesPerPico);
 				if (CyclesThisLine>=1)	//Avoid un-needed CPU engine calls
 					CycleDrift = CPUExec((int)floor(CyclesThisLine))+(CyclesThisLine- floor(CyclesThisLine));
 				else 
@@ -385,7 +389,7 @@ int CPUCycle(void)
 			case 1:		//Only Interupting
 				//WriteLog("1", TOCONS);
 				PicosThisLine-=PicosToInterupt;
-				CyclesThisLine= CycleDrift + (PicosToInterupt * CyclesPerLine * OverClock/PicosPerLine);
+				CyclesThisLine= CycleDrift + (PicosToInterupt * CyclesPerPico);
 				if (CyclesThisLine>=1)
 					CycleDrift = CPUExec((int)floor(CyclesThisLine))+(CyclesThisLine- floor(CyclesThisLine));
 				else 
@@ -398,7 +402,7 @@ int CPUCycle(void)
 			case 2:		//Only Sampling
 				// WriteLog("2", TOCONS);
 				PicosThisLine-=PicosToSoundSample;
-				CyclesThisLine=CycleDrift +(PicosToSoundSample * CyclesPerLine * OverClock/PicosPerLine );
+				CyclesThisLine=CycleDrift +(PicosToSoundSample * CyclesPerPico );
 				if (CyclesThisLine >= 1)
 				{
 					//sprintf(Message, "%d ", LC);
@@ -423,7 +427,7 @@ int CPUCycle(void)
 				if (PicosToSoundSample<PicosToInterupt)
 				{
 					PicosThisLine-=PicosToSoundSample;	
-					CyclesThisLine=CycleDrift +(PicosToSoundSample * CyclesPerLine * OverClock/PicosPerLine);
+					CyclesThisLine=CycleDrift +(PicosToSoundSample * CyclesPerPico);
 					if (CyclesThisLine>=1)
 						CycleDrift = CPUExec((int)floor(CyclesThisLine))+(CyclesThisLine- floor(CyclesThisLine));
 					else 
@@ -433,7 +437,7 @@ int CPUCycle(void)
 					PicosToSoundSample=SoundInterupt;
 					PicosThisLine-=PicosToInterupt;
 
-					CyclesThisLine= CycleDrift +(PicosToInterupt * CyclesPerLine * OverClock/PicosPerLine);
+					CyclesThisLine= CycleDrift +(PicosToInterupt * CyclesPerPico);
 					if (CyclesThisLine>=1)
 						CycleDrift = CPUExec((int)floor(CyclesThisLine))+(CyclesThisLine- floor(CyclesThisLine));
 					else 
@@ -447,7 +451,7 @@ int CPUCycle(void)
 				if (PicosToSoundSample>PicosToInterupt)
 				{
 					PicosThisLine-=PicosToInterupt;
-					CyclesThisLine= CycleDrift +(PicosToInterupt * CyclesPerLine * OverClock/PicosPerLine);
+					CyclesThisLine= CycleDrift +(PicosToInterupt * CyclesPerPico);
 					if (CyclesThisLine>=1)
 						CycleDrift = CPUExec((int)floor(CyclesThisLine))+(CyclesThisLine- floor(CyclesThisLine));
 					else 
@@ -456,7 +460,7 @@ int CPUCycle(void)
 					PicosToSoundSample-=PicosToInterupt;
 					PicosToInterupt=MasterTickCounter;
 					PicosThisLine-=PicosToSoundSample;
-					CyclesThisLine=  CycleDrift +(PicosToSoundSample * CyclesPerLine * OverClock/PicosPerLine);	
+					CyclesThisLine=  CycleDrift +(PicosToSoundSample * CyclesPerPico);	
 					if (CyclesThisLine>=1)
 						CycleDrift = CPUExec((int)floor(CyclesThisLine))+(CyclesThisLine- floor(CyclesThisLine));
 					else 
@@ -468,7 +472,7 @@ int CPUCycle(void)
 				}
 					//They are the same (rare)
 			PicosThisLine-=PicosToInterupt;
-			CyclesThisLine=CycleDrift +(PicosToSoundSample * CyclesPerLine * OverClock/PicosPerLine );
+			CyclesThisLine=CycleDrift +(PicosToSoundSample * CyclesPerPico );
 			if (CyclesThisLine>1)
 				CycleDrift = CPUExec((int)floor(CyclesThisLine))+(CyclesThisLine- floor(CyclesThisLine));
 			else 
