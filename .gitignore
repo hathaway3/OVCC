@@ -26,4 +26,5 @@ Exec16/
 vhds/
 testlib
 libagar-src/
-**/*.dsk
+64M-card.os9
+Backups010403.os9
