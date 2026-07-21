@@ -76,18 +76,17 @@ media in `~/Library/Application Support/OVCC/`:
 ├── roms/  dsks/  vhds/     # (Optional) peripheral ROMs / disk / hard-disk images
 ```
 
-Alternatively, for a portable/dev layout, place the ROMs and media directories
-**directly next to the `ovcc.app` bundle** (search location 3 above).
+### Alternative: portable / dev layout
 
-### Recommended Directory Structure
-
-Create a folder for your emulator setup as follows:
+Or keep everything together **directly next to the `ovcc.app` bundle** (search
+location 3 above) — handy for a self-contained folder you can move around or for
+running out of the build tree:
 
 ```
 Emulator-Folder/
 ├── ovcc.app/               # The compiled application bundle
-├── coco3.rom               # (Required) CoCo 3 ROM image (32KB)
-├── disk11.rom              # (Required) Disk Controller ROM image (8KB)
+├── coco3.rom               # (Required) CoCo 3 ROM image (32768 bytes)
+├── disk11.rom              # (Required) Disk Controller ROM image (8192 bytes)
 ├── rgbdos.rom              # (Optional) RGB-DOS ROM
 ├── roms/                   # (Optional) Subfolder for other peripheral/MPI ROMs
 │   ├── orch90.rom
@@ -199,13 +198,13 @@ If you prefer to compile the dependencies and emulator manually, follow these st
 
 ## 6. Running the Emulator
 
-1. Place your ROM files (`coco3.rom` and `disk11.rom`) next to the `ovcc.app` folder (see directory layout in [Section 3](#3-roms-and-directory-structure)).
+1. Place your ROM files (`coco3.rom` and `disk11.rom`) in `~/Library/Application Support/OVCC/` (recommended), or next to the `ovcc.app` folder (see [Section 3](#3-roms-and-directory-structure)).
 2. Double-click `ovcc.app` in Finder, or launch it from the terminal:
    ```bash
    open ovcc.app
    ```
 3. The emulator will automatically:
-   * Search for your ROMs (e.g. `coco3.rom` and `disk11.rom`) next to the app bundle, inside the executable folder, or in the user config folder `~/Library/Application Support/OVCC/`.
+   * Search for your ROMs (e.g. `coco3.rom` and `disk11.rom`) in `~/Library/Application Support/OVCC/`, then the bundle's `Contents/PlugIns/`, then next to the `ovcc.app` bundle, then the executable folder.
    * Initialize configuration settings and logs in `~/Library/Application Support/OVCC/` so they persist cleanly.
 4. Once open, you can configure the ROMs and libraries through the OVCC GUI options menu.
 
