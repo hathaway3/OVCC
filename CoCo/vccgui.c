@@ -23,6 +23,7 @@ This file is part of VCC (Virtual Color Computer).
 #include "AGARInterface.h"
 #include "audio.h"
 #include "config.h"
+#include "fileops.h"
 #include "keyboard.h"
 #include "joystickinputSDL.h"
 #include "throttle.h"
@@ -150,6 +151,24 @@ void LoadIniFile(AG_Event *event)
     ConfigLoadIniFile(file);
 }
 
+// Directory that holds Vcc.ini (writable; on macOS this is
+// ~/Library/Application Support/OVCC). Config file dialogs default here so the
+// user isn't dropped inside the read-only .app bundle (the launcher's cwd).
+static const char *ConfigDir(void)
+{
+    extern char IniFilePath[MAX_PATH];
+    static char dir[MAX_PATH];
+    char *delim;
+
+    AG_Strlcpy(dir, IniFilePath, sizeof(dir));
+    delim = strrchr(dir, GetPathDelim());
+    if (delim != NULL)
+        *delim = '\0';
+    if (dir[0] == '\0')
+        AG_Strlcpy(dir, ".", sizeof(dir));
+    return dir;
+}
+
 void LoadConf(AG_Event *event)
 {
     SystemState2 *state = AG_PTR(1);
@@ -160,7 +179,7 @@ void LoadConf(AG_Event *event)
     AG_WindowSetCloseAction(fdw, AG_WINDOW_DETACH);
 
     AG_FileDlg *fd = AG_FileDlgNew(fdw, AG_FILEDLG_EXPAND | AG_FILEDLG_CLOSEWIN | AG_FILEDLG_MASK_EXT);
-    AG_FileDlgSetDirectory(fd, ".");
+    AG_FileDlgSetDirectory(fd, ConfigDir());
 
 	AG_FileDlgAddType(fd, "CoCo Confifuration File", "*.ini",	LoadIniFile, "%p", state);
     AG_WindowShow(fdw);
@@ -203,7 +222,7 @@ void SaveConf(AG_Event *event)
     AG_WindowSetCloseAction(fdw, AG_WINDOW_DETACH);
 
     AG_FileDlg *fd = AG_FileDlgNew(fdw, AG_FILEDLG_EXPAND | AG_FILEDLG_CLOSEWIN | AG_FILEDLG_MASK_EXT);
-    AG_FileDlgSetDirectory(fd, ".");
+    AG_FileDlgSetDirectory(fd, ConfigDir());
 
 	AG_FileDlgAddType(fd, "CoCo Configuration File", "*.ini",	SaveIniFile, "%p", state);
     AG_WindowShow(fdw);
