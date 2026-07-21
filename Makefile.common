@@ -10,8 +10,18 @@ endif
 ODIR = obj
 
 DEBUG=#-g #-D _DEBUG
-OPT=-Ofast -march=native -flto # -Og # -Ofast #
-WARN = -w # -Wall
+ifeq ($(TARGETOS),Darwin)
+  UNAME_M := $(shell uname -m)
+  ifeq ($(UNAME_M),arm64)
+    OPT ?= -Ofast -mcpu=apple-m1 -flto
+  else
+    OPT ?= -Ofast -flto
+  endif
+  WARN ?= -Wall
+else
+  OPT ?= -Ofast -march=native -flto
+  WARN ?= -w
+endif
 PTHREAD = -pthread
 
 ifeq ($(TARGETOS),Darwin)

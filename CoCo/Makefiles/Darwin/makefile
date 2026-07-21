@@ -72,8 +72,13 @@ $(ODIR)/tcc1014graphicsAGAR.o: tcc1014graphicsAGAR.c defines.h tcc1014graphicsAG
 $(ODIR)/iniman.o: iniman.c iniman.h
 
 install:
-	install $(TARGET) ../ovcc.app/Contents/$(TARGET)
-	dylibbundler -of -b -x ../ovcc.app/Contents/$(TARGET) -d ../ovcc.app/Contents/libs -s /usr/local/lib
+	mkdir -p ../ovcc.app/Contents/MacOS
+	mkdir -p ../ovcc.app/Contents/Frameworks
+	rm -f ../ovcc.app/Contents/ovcc
+	install $(TARGET) ../ovcc.app/Contents/MacOS/$(TARGET)
+	install -m 0755 ../Makefiles/Darwin/ovcc-launch ../ovcc.app/Contents/MacOS/ovcc-launch
+	sed 's/@VERSION@/$(GIT_VERSION)/g' ../Makefiles/Darwin/Info.plist.template > ../ovcc.app/Contents/Info.plist
+	dylibbundler -of -b -p @executable_path/../Frameworks/ -x ../ovcc.app/Contents/MacOS/$(TARGET) -d ../ovcc.app/Contents/Frameworks -s $(BREW_PREFIX)/lib -s /usr/local/lib
 
 test:
 # No test for $(TARGET)

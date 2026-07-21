@@ -145,9 +145,13 @@ void LoadConfig(SystemState2 *LCState)
 	strcpy(CurrentConfig.PathtoExe,ExecDirectory);
 	strcat(CurrentConfig.PathtoExe,GetPathDelimStr());
 	strcat(CurrentConfig.PathtoExe,AppName);
+#ifdef DARWIN
+	ResolvePlatformPath(IniFileName, IniFilePath, sizeof(IniFilePath));
+#else
 	strcpy(IniFilePath,ExecDirectory);
 	strcat(IniFilePath,GetPathDelimStr());
 	strcat(IniFilePath,IniFileName);
+#endif
 	LCState->ScanLines = 0;
 	NumberOfSoundCards = GetSoundCardListSDL(SoundCards);
 	ReadIniFile();

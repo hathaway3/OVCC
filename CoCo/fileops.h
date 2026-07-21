@@ -25,12 +25,13 @@ extern "C" {
 void PathStripPath(char *);
 void ValidatePath(char *Path);
 int CheckPath(char *);
-BOOL PathRemoveFileSpec(char *);
-BOOL PathRemoveExtension(char *);
+int PathRemoveFileSpec(char *);
+int PathRemoveExtension(char *);
 char* PathFindExtension(char *);
 //int WritePrivateProfileString(char *, char *, char *, char *);
 char GetPathDelim();
 char *GetPathDelimStr();
+int ResolvePlatformPath(const char *filename, char *resolved, size_t max_len);
 
 #ifdef __cplusplus
 	}

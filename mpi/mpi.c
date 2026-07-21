@@ -86,6 +86,7 @@ static void *hinstLib[4]={NULL,NULL,NULL,NULL};
 static unsigned char ChipSelectSlot=3,SpareSelectSlot=3,SwitchSlot=3,SlotRegister=255;
 static unsigned char slotMin = 1, slotMax = 4, slotVal = 4;
 static 	char moduleParams[1024];
+static AG_Window *configWin = NULL;   // MPI Config dialog, for relayout on slot switch
 
 //Function Prototypes for this module
 
@@ -387,6 +388,11 @@ void SlotChange(AG_Event *event)
 {
 	SwitchSlot = slotVal-1;
 	ReadModuleParms(SwitchSlot, moduleParams);
+	// The status label is polled and resizes with the (variable-length) module
+	// text; without recomputing the window layout it overflows onto the widgets
+	// below it. Re-run the layout so the dialog stays intact across slot switches.
+	if (configWin != NULL)
+		AG_WindowUpdate(configWin);
 }
 
 void ConfigMPI(AG_Event *event)
@@ -397,6 +403,7 @@ void ConfigMPI(AG_Event *event)
     {
         return;
     }
+    configWin = win;
 
     AG_WindowSetGeometryAligned(win, AG_WINDOW_ALIGNMENT_NONE, 454, 350);
     AG_WindowSetCaptionS(win, "MPI Config");

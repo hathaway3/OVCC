@@ -25,7 +25,9 @@ On macOS, if a graphical application is run directly as a bare command-line bina
 * The OS will **not** assign keyboard or mouse input focus to the application's window.
 * Keyboard inputs will continue to be received by the parent terminal, making the emulator unusable.
 
-To resolve this, OVCC must be run from a standard macOS **Application Bundle** (`ovcc.app`). The bundle utilizes a startup launcher script (`ovcc.app/Contents/MacOS/Ovcc`) that sets up the environment and runs the binary under a GUI context.
+To resolve this, OVCC must be run from a standard macOS **Application Bundle** (`ovcc.app`). The bundle utilizes a startup launcher script (`ovcc.app/Contents/MacOS/ovcc-launch`, set as the bundle's `CFBundleExecutable`) that sets up the environment and runs the `ovcc` binary under a GUI context.
+
+> **Note:** the launcher is deliberately *not* named `Ovcc`. macOS filesystems are case-insensitive by default, so `Ovcc` and the `ovcc` binary would be treated as the same file and collide in `Contents/MacOS/`. The distinct `ovcc-launch` name lets both coexist.
 
 Additionally, to ensure the `.app` bundle is fully portable and self-contained, the build process utilizes `dylibbundler`. This utility automatically copies all dynamic library dependencies (such as `SDL2`, `libagar`, `freetype`, etc.) into the bundle and updates their install names.
 
@@ -51,9 +53,31 @@ Before building OVCC, ensure you have the following installed:
 
 ## 3. ROMs and Directory Structure
 
-OVCC requires Color Computer 3 ROM files to boot. Because macOS application bundles are read-only when relocated or code-signed, the `ovcc` launcher script features a convenient auto-linking mechanism.
+OVCC requires Color Computer 3 ROM files to boot. It locates ROMs and media at
+runtime by searching, in order:
 
-If you place your ROMs and media directories **directly next to the `ovcc.app` bundle**, the launcher script will automatically symlink them into the bundle at startup.
+1. `~/Library/Application Support/OVCC/` — **recommended**, and where `Vcc.ini` lives
+2. the bundle's `Contents/PlugIns/` directory
+3. the folder that contains `ovcc.app`
+4. the executable directory inside the bundle
+
+### Relocatable install (drag into /Applications)
+
+Because of that search order, `ovcc.app` is **fully self-contained and relocatable** —
+you can drag it into `/Applications` (or anywhere) and run it, with nothing required
+beside it and nothing written back into the bundle at runtime. Just put your ROMs and
+media in `~/Library/Application Support/OVCC/`:
+
+```
+~/Library/Application Support/OVCC/
+├── Vcc.ini                 # created on first run
+├── coco3.rom               # (Required) CoCo 3 ROM image (32768 bytes)
+├── disk11.rom              # (Required) Disk Controller ROM image (8192 bytes)
+├── roms/  dsks/  vhds/     # (Optional) peripheral ROMs / disk / hard-disk images
+```
+
+Alternatively, for a portable/dev layout, place the ROMs and media directories
+**directly next to the `ovcc.app` bundle** (search location 3 above).
 
 ### Recommended Directory Structure
 
@@ -157,18 +181,19 @@ If you prefer to compile the dependencies and emulator manually, follow these st
    make
    ```
 
-### Step 5.3: Package into `ovcc.app`
+#### Step 5.3: Package into `ovcc.app`
 
 1. Create the bundle folders:
    ```bash
-   mkdir -p ovcc.app/Contents/libs
-   mkdir -p ovcc.app/Contents/modules
+   mkdir -p ovcc.app/Contents/MacOS
+   mkdir -p ovcc.app/Contents/Frameworks
+   mkdir -p ovcc.app/Contents/PlugIns
    ```
 2. Run `make install` to copy the binaries and modules, and resolve dependencies:
    ```bash
    make install
    ```
-   *Note: The `install` target in the Makefiles uses `dylibbundler` to search for all shared library dependencies under `/usr/local/lib` and `/opt/homebrew/lib`, copy them into `ovcc.app/Contents/libs`, and rewrite the binary load commands to use relative paths (`@executable_path/../libs/`).*
+   *Note: `make install` must run **after** a full `make` completes. The `install` target in the Makefiles uses `dylibbundler` to search for all shared library dependencies under `/usr/local/lib`, `/opt/homebrew/lib`, and the project-local `libagar-install/lib` directory. It copies them into `ovcc.app/Contents/Frameworks/` and rewrites the load commands to use relative paths (`@executable_path/../Frameworks/` and `@loader_path/../Frameworks/`), removing the need for launcher wrapper scripts.*
 
 ---
 
@@ -179,9 +204,9 @@ If you prefer to compile the dependencies and emulator manually, follow these st
    ```bash
    open ovcc.app
    ```
-3. The launcher script will automatically:
-   * Setup links to your ROMs and directories.
-   * Start `ovcc` with the correct dynamic library paths.
+3. The emulator will automatically:
+   * Search for your ROMs (e.g. `coco3.rom` and `disk11.rom`) next to the app bundle, inside the executable folder, or in the user config folder `~/Library/Application Support/OVCC/`.
+   * Initialize configuration settings and logs in `~/Library/Application Support/OVCC/` so they persist cleanly.
 4. Once open, you can configure the ROMs and libraries through the OVCC GUI options menu.
 
 ---
@@ -189,19 +214,23 @@ If you prefer to compile the dependencies and emulator manually, follow these st
 ## 7. Troubleshooting & macOS-Specific Tips
 
 ### Keyboard Input Doesn't Work
-If the window responds to clicks but you cannot type, check how the emulator was started. If you ran `./ovcc` directly from `CoCo/ovcc` or `ovcc.app/Contents/ovcc`, keyboard I/O remains bound to the terminal window. **Always run the emulator via the `ovcc.app` bundle (e.g. `open ovcc.app` or double-clicking in Finder).**
+If the window responds to clicks but you cannot type, check how the emulator was started. If you ran `./ovcc` directly from `CoCo/ovcc` or `ovcc.app/Contents/MacOS/ovcc`, keyboard I/O remains bound to the terminal window. **Always run the emulator via the `ovcc.app` bundle (e.g. `open ovcc.app` or double-clicking in Finder).**
 
 ### Gatekeeper Blocked App Execution
 If you transfer the compiled `ovcc.app` to another Mac, macOS Gatekeeper may block it because it is not signed with an Apple Developer Certificate.
 * **To bypass**: Right-click (or Control-click) `ovcc.app` in Finder, select **Open**, and click **Open** in the confirmation dialog.
+* **CLI bypass**: Alternatively, run this command in terminal to strip the Gatekeeper quarantine flag:
+  ```bash
+  xattr -dr com.apple.quarantine ovcc.app
+  ```
 
 ### Homebrew Path Incompatibilities (Intel vs. Apple Silicon)
 The Makefiles search for Homebrew headers and libraries. 
 * On Apple Silicon Macs, Homebrew installs to `/opt/homebrew`.
 * On Intel Macs, Homebrew installs to `/usr/local`.
 
-The compilation flags automatically include:
-`-I/opt/homebrew/include` and `-L/opt/homebrew/lib` (via `Makefile.common`). If you are using custom directory structures, ensure your `pkgconf` environment points to the correct Homebrew paths:
+The compilation flags automatically query the correct prefix via `brew --prefix`:
+`-I$(BREW_PREFIX)/include` and `-L$(BREW_PREFIX)/lib` (via `Makefile.common`). If you are using custom directory structures, ensure your `pkg-config` environment points to the correct Homebrew paths:
 ```bash
 export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:$PKG_CONFIG_PATH"
 ```

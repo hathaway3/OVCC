@@ -294,8 +294,12 @@ static void LoadConfig(void)
 		UpdateMenu(disk);
 	}
 
+#ifdef DARWIN
+	ResolvePlatformPath("rgbdos.rom", DiskRomPath, sizeof(DiskRomPath));
+#else
 	getcwd(DiskRomPath, sizeof(DiskRomPath));
 	strcat(DiskRomPath, "/rgbdos.rom");
+#endif
 	LoadExtRom(DiskRomPath);
 }
 

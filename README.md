@@ -44,7 +44,7 @@ Build AGAR as per AGAR documentation with the exception/addition of the configur
 Compiling OVCC
 
 > [!TIP]
-> **macOS Users**: See the dedicated [macOS Build and Run Guide](file:///Users/jimmiehathaway/OVCC/README_MAC.md) for detailed prerequisites, automated and manual build instructions, asset management, and troubleshooting.
+> **macOS Users**: See the dedicated [macOS Build and Run Guide](README_MAC.md) for detailed prerequisites, automated and manual build instructions, asset management, and troubleshooting.
 
 ### Automated Build & Packaging (macOS)
 

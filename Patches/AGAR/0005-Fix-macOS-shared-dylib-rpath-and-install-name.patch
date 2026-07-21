@@ -1,0 +1,15 @@
+diff --git a/mk/build.lib.mk b/mk/build.lib.mk
+index 47acafa2a..59214544b 100644
+--- a/mk/build.lib.mk
++++ b/mk/build.lib.mk
+@@ -380,8 +380,8 @@ lib${LIB}.so: ${SRCS_GENERATED} _lib_objs ${OBJS}
+ 	    \
+ 	    case "${HOST}" in \
+ 	    *-darwin*) \
+-	        echo "${CC} -shared -o $$_libout -Wl,-rpath,${LIBDIR} ${LDFLAGS} -dynamiclib -install_name lib${LIB}.dylib $$_objs ${LIBS}"; \
+-	        ${CC} -shared -o $$_libout -Wl,-rpath ${LIBDIR} ${LDFLAGS} -dynamiclib -install_name lib${LIB}.dylib $$_objs ${LIBS}; \
++	        echo "${CC} -shared -o $$_libout -Wl,-rpath,${LIBDIR} -Wl,-headerpad_max_install_names ${LDFLAGS} -dynamiclib -install_name ${LIBDIR}/lib${LIB}.dylib $$_objs ${LIBS}"; \
++	        ${CC} -shared -o $$_libout -Wl,-rpath,${LIBDIR} -Wl,-headerpad_max_install_names ${LDFLAGS} -dynamiclib -install_name ${LIBDIR}/lib${LIB}.dylib $$_objs ${LIBS}; \
+ 	        ;; \
+ 	    *-mingw*) \
+ 	        echo "${CC} -shared -o $$_libout -Wl,--out-implib,lib${LIB}_dll.lib -Wl,-rpath ${LIBDIR} ${LDFLAGS} $$_objs ${LIBS}"; \

@@ -20,7 +20,9 @@ $(ODIR)/fileops.o: ../CoCo/fileops.c ../CoCo/fileops.h
 $(ODIR)/iniman.o: ../CoCo/iniman.c ../CoCo/iniman.h
 
 install:
-	install -m 644 $(TARGET) ../ovcc.app/Contents/modules/$(TARGET)
-	dylibbundler -of -b -x ../ovcc.app/Contents/modules/$(TARGET) -d ../ovcc.app/Contents/libs -s /usr/local/lib
+	mkdir -p ../ovcc.app/Contents/PlugIns
+	mkdir -p ../ovcc.app/Contents/Frameworks
+	install -m 644 $(TARGET) ../ovcc.app/Contents/PlugIns/$(TARGET)
+	dylibbundler -of -b -p @loader_path/../Frameworks/ -x ../ovcc.app/Contents/PlugIns/$(TARGET) -d ../ovcc.app/Contents/Frameworks -s $(BREW_PREFIX)/lib -s /usr/local/lib
 
 test:

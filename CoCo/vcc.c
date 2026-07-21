@@ -21,6 +21,10 @@ This file is part of VCC (Virtual Color Computer).
 
 #include <stdio.h>
 #include <unistd.h>
+#ifdef DARWIN
+#include <mach-o/dyld.h>
+#include <limits.h>
+#endif
 #include "defines.h"
 #include "fileops.h"
 #include "resource.h"
@@ -112,28 +116,52 @@ void PadDummyCartMenus(void);
 
 int main(int argc, char **argv)
 {
-	char cwd[260];
+	static char static_exec_folder[1024];
+	char cwd[1024];
 	char name[260];
 
 #ifdef _DEBUG
 # ifdef DARWIN
-	logg = fopen("./ovcc.log", "w");
+	char logPath[1024];
+	ResolvePlatformPath("ovcc.log", logPath, sizeof(logPath));
+	logg = fopen(logPath, "w");
 	if (!logg) {
-		fprintf(stderr, "Couldn't open ovcc.log\n");
+		fprintf(stderr, "Couldn't open ovcc.log at %s\n", logPath);
 		return 1;
 	}
 	setbuf(logg, NULL);
 # endif
 #endif
 
+#ifdef DARWIN
+	char temp_resolved[1024];
+	ResolvePlatformPath("", temp_resolved, sizeof(temp_resolved)); // This ensures the directory is created
+	char exec_path[1024];
+	uint32_t size = sizeof(exec_path);
+	if (_NSGetExecutablePath(exec_path, &size) == 0) {
+		char real_exec_path[1024];
+		if (realpath(exec_path, real_exec_path) != NULL) {
+			strncpy(static_exec_folder, real_exec_path, sizeof(static_exec_folder));
+		} else {
+			strncpy(static_exec_folder, exec_path, sizeof(static_exec_folder));
+		}
+		PathRemoveFileSpec(static_exec_folder);
+	} else {
+		strncpy(static_exec_folder, argv[0], sizeof(static_exec_folder));
+		PathRemoveFileSpec(static_exec_folder);
+	}
+	GlobalExecFolder = static_exec_folder;
+#else
 	if (getcwd(cwd, sizeof(cwd)) != NULL) {
-		GlobalExecFolder = cwd;
+		strncpy(static_exec_folder, cwd, sizeof(static_exec_folder));
 	} 
 	else
 	{
-		GlobalExecFolder = argv[0];
-		PathRemoveFileSpec(GlobalExecFolder);
+		strncpy(static_exec_folder, argv[0], sizeof(static_exec_folder));
+		PathRemoveFileSpec(static_exec_folder);
 	}
+	GlobalExecFolder = static_exec_folder;
+#endif
 
 	GlobalFullName = argv[0];
 

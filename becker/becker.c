@@ -16,6 +16,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "becker.h"
+#include "../CoCo/fileops.h"
 #include "../CoCo/iniman.h"
 
 #define MAX_PATH 260
@@ -675,8 +676,12 @@ void LoadConfig(void)
 	else
 		dw_setport("65504");
 	
+#ifdef DARWIN
+	ResolvePlatformPath("hdbdwbck.rom", DiskRomPath, sizeof(DiskRomPath));
+#else
     getcwd(DiskRomPath, MAX_PATH);
 	strcat(DiskRomPath, "/hdbdwbck.rom");
+#endif
 	LoadExtRom(DiskRomPath);
 }
 

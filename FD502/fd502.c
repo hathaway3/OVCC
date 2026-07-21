@@ -116,7 +116,7 @@ void ADDCALL ModuleName(char *ModName, AG_MenuItem *Temp)
 	menuAnchor = Temp;
 	strcpy(ModName, moduleName);
 
-	if (menuAnchor != NULL) 
+	if (menuAnchor != NULL)
 	{
 		BuildMenu();
 	}
@@ -737,10 +737,15 @@ void LoadConfig(void)
 	AG_Strlcpy(TempRomFileName, RomFileName, sizeof(TempFileName));
 	CheckPath(RomFileName);
 	LoadExtRom(External, RomFileName);
+#ifdef DARWIN
+	ResolvePlatformPath("disk11.rom", DiskRomPath, sizeof(DiskRomPath));
+	ResolvePlatformPath("rgbdos.rom", RGBRomPath, sizeof(RGBRomPath));
+#else
 	getcwd(DiskRomPath, sizeof(DiskRomPath));
 	strcpy(RGBRomPath, DiskRomPath);
 	strcat(DiskRomPath, "/disk11.rom");
 	strcat(RGBRomPath, "/rgbdos.rom");
+#endif
 	LoadExtRom(TandyDisk, DiskRomPath);
 	LoadExtRom(RGBDisk, RGBRomPath);
 

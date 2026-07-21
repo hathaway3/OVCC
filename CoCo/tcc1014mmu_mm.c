@@ -438,11 +438,11 @@ void CopyRom_hw(void)
 	UINT16 temp=0;
 	temp=load_int_rom(BasicRomName());		//Try to load the image
 	if (temp == 0)
-	{	// If we can't find it use default copy
-		AG_Strlcpy(ExecPath, GlobalExecFolder, sizeof(ExecPath));
-		strcat(ExecPath, GetPathDelimStr());
-		strcat(ExecPath, "coco3.rom");
-		temp = load_int_rom(ExecPath);
+	{	// If we can't find it, search the platform locations (Application
+		// Support, next to the .app, PlugIns, exec dir) so the bundle is
+		// relocatable and coco3.rom need not sit beside the binary.
+		if (ResolvePlatformPath("coco3.rom", ExecPath, sizeof(ExecPath)))
+			temp = load_int_rom(ExecPath);
 	}
 	if (temp == 0)
 	{

@@ -20,6 +20,7 @@ typedef int BOOL;
 #include <stdio.h>
 #include <string.h>
 #include "defines.h"
+#include "../CoCo/fileops.h"
 #include "orch90.h"
 
 #define EXTROMSIZE 8192
@@ -81,7 +82,11 @@ unsigned char ADDCALL ModuleReset(void)
 	char RomPath[MAX_PATH];
 
 	memset(Rom, 0xff, 8192);
+#ifdef DARWIN
+	ResolvePlatformPath("orch90.rom", RomPath, sizeof(RomPath));
+#else
 	strcpy(RomPath, "orch90.rom");
+#endif
 	
 	if (PakSetCart != NULL) 
 	{

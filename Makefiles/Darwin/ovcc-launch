@@ -1,0 +1,23 @@
+#!/bin/bash
+# OVCC bundle launcher (macOS), set as the bundle's CFBundleExecutable.
+#
+# Its only job is to start the emulator under a GUI context from inside the
+# bundle. ROMs and media are located at runtime by the emulator itself via
+# ResolvePlatformPath(), which searches, in order:
+#   1. ~/Library/Application Support/OVCC/   (recommended home for ROMs/media)
+#   2. the bundle's Contents/PlugIns/ dir
+#   3. the folder that contains ovcc.app
+#   4. the executable directory
+# Because of that search, ovcc.app is fully relocatable (e.g. drag it into
+# /Applications) with no files required beside it and nothing written back
+# into the bundle at runtime.
+#
+# NB: this launcher is deliberately NOT named "Ovcc" -- macOS filesystems are
+# case-insensitive by default, so that would collide with the "ovcc" binary in
+# the same directory.
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+cd "${DIR}"
+
+# Dependent dylibs resolve via @executable_path/../Frameworks (dylibbundler rpath).
+exec ./ovcc "$@"

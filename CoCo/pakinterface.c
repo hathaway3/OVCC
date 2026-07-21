@@ -242,7 +242,10 @@ int InsertModule (char *ModulePath)
 		UnloadDll(1);
 		strcpy(Modname, "");
 		ValidatePath(ModulePath);
-		if (ModulePath[0] != 0 && (ModulePath[0] != '/' || ModulePath[1] != ':'))
+		// Only prepend "./" for relative paths. A path is absolute if it
+		// starts with '/' (Unix) or has a drive-letter ':' at index 1 (Windows);
+		// prepending "./" to those produced ".//Users/..." and broke dlopen.
+		if (ModulePath[0] != 0 && ModulePath[0] != '/' && ModulePath[1] != ':')
 		{
 			strncpy(Modname, "./", MAX_PATH);
 		}

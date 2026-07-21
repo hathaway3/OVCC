@@ -22,14 +22,44 @@ This file is part of VCC (Virtual Color Computer).
 #include "defines.h"
 #include "fileops.h"
 
+#ifdef DARWIN
+#include <mach-o/dyld.h>
+#include <limits.h>
+#include <unistd.h>
+#include <libgen.h>
+#include <sys/stat.h>
+#endif
+
 static char ExecFolder[MAX_PATH];
+
+static void InitExecFolder(void) {
+	if (ExecFolder[0] != 0) return;
+#ifdef DARWIN
+	char exec_path[1024];
+	uint32_t size = sizeof(exec_path);
+	if (_NSGetExecutablePath(exec_path, &size) == 0) {
+		char real_exec_path[1024];
+		if (realpath(exec_path, real_exec_path) == NULL) {
+			strncpy(real_exec_path, exec_path, sizeof(real_exec_path));
+		}
+		char temp_path[1024];
+		strncpy(temp_path, real_exec_path, sizeof(temp_path));
+		char *exec_dir = dirname(temp_path);
+		strncpy(ExecFolder, exec_dir, sizeof(ExecFolder));
+	} else {
+		getcwd(ExecFolder, sizeof(ExecFolder));
+	}
+#else
+	getcwd(ExecFolder, sizeof(ExecFolder));
+#endif
+}
 
 void ValidatePath(char *Path)
 {
 	char TempPath[MAX_PATH]="";
 	int tpl;
 
-	if (ExecFolder[0] == 0) getcwd(ExecFolder, sizeof(ExecFolder));
+	InitExecFolder();
 
 	strcpy(TempPath,Path);			
 	PathRemoveFileSpec(TempPath);		//Get path to Incomming file
@@ -45,9 +75,19 @@ void ValidatePath(char *Path)
 
 int CheckPath( char *Path)	//Return 1 on Error
 {
+#ifdef DARWIN
+	char TempPath[1024];
+	if ((strlen(Path)==0) || (strlen(Path) > 1024))
+		return(1);
+	if (ResolvePlatformPath(Path, TempPath, sizeof(TempPath))) {
+		strcpy(Path, TempPath);
+		return 0;
+	}
+	return 1;
+#else
 	char TempPath[MAX_PATH]="";
 
-	if (ExecFolder[0] == 0) getcwd(ExecFolder, sizeof(ExecFolder));
+	InitExecFolder();
 
 	if ((strlen(Path)==0) | (strlen(Path) > MAX_PATH))
 		return(1);
@@ -68,6 +108,7 @@ int CheckPath( char *Path)	//Return 1 on Error
 	}
 
 	return(0);
+#endif
 }
 
 char GetPathDelim()
@@ -196,3 +237,117 @@ char* PathFindExtension(char *Path)
 
 	return &Path[len]; // Return pointer to null terminator
 }
+
+#ifdef DARWIN
+int ResolvePlatformPath(const char *filename, char *resolved, size_t max_len) {
+    if (!filename || filename[0] == '\0') {
+        resolved[0] = '\0';
+        return 0;
+    }
+    // If absolute path
+    if (filename[0] == '/') {
+        strncpy(resolved, filename, max_len);
+        return (access(resolved, F_OK) == 0);
+    }
+
+    // Determine the main executable's directory
+    char exec_path[1024];
+    uint32_t size = sizeof(exec_path);
+    if (_NSGetExecutablePath(exec_path, &size) != 0) {
+        return 0;
+    }
+    
+    char real_exec_path[1024];
+    if (realpath(exec_path, real_exec_path) == NULL) {
+        strncpy(real_exec_path, exec_path, sizeof(real_exec_path));
+    }
+
+    char temp_path[1024];
+    strncpy(temp_path, real_exec_path, sizeof(temp_path));
+    char *exec_dir = dirname(temp_path);
+
+    char bundle_parent[1024] = "";
+    char bundle_plugins[1024] = "";
+    size_t exec_dir_len = strlen(exec_dir);
+    
+    if (exec_dir_len > 15 && strcmp(exec_dir + exec_dir_len - 15, "/Contents/MacOS") == 0) {
+        strncpy(temp_path, exec_dir, exec_dir_len - 15);
+        temp_path[exec_dir_len - 15] = '\0'; // /path/to/ovcc.app
+        snprintf(bundle_plugins, sizeof(bundle_plugins), "%s/Contents/PlugIns", temp_path);
+        
+        char temp_path2[1024];
+        strncpy(temp_path2, temp_path, sizeof(temp_path2));
+        char *parent = dirname(temp_path2);
+        strncpy(bundle_parent, parent, sizeof(bundle_parent));
+    } else {
+        strncpy(bundle_parent, exec_dir, sizeof(bundle_parent));
+        strncpy(bundle_plugins, exec_dir, sizeof(bundle_plugins));
+    }
+
+    char app_support[1024] = "";
+    char *home = getenv("HOME");
+    if (home) {
+        snprintf(app_support, sizeof(app_support), "%s/Library/Application Support/OVCC", home);
+        struct stat st = {0};
+        if (stat(app_support, &st) == -1) {
+            mkdir(app_support, 0755);
+        }
+    } else {
+        strncpy(app_support, exec_dir, sizeof(app_support));
+    }
+
+    const char *fn = filename;
+    if (strncmp(fn, "modules/", 8) == 0) {
+        fn += 8;
+    } else if (strncmp(fn, "./modules/", 10) == 0) {
+        fn += 10;
+    } else if (strncmp(fn, "./", 2) == 0) {
+        fn += 2;
+    }
+
+    // 1. App support directory
+    snprintf(resolved, max_len, "%s/%s", app_support, fn);
+    if (access(resolved, F_OK) == 0) return 1;
+
+    // 2. Bundle PlugIns directory
+    snprintf(resolved, max_len, "%s/%s", bundle_plugins, fn);
+    if (access(resolved, F_OK) == 0) return 1;
+
+    // 3. Bundle parent directory
+    snprintf(resolved, max_len, "%s/%s", bundle_parent, fn);
+    if (access(resolved, F_OK) == 0) return 1;
+
+    // 4. Executable directory
+    snprintf(resolved, max_len, "%s/%s", exec_dir, fn);
+    if (access(resolved, F_OK) == 0) return 1;
+
+    // 5. Current directory
+    strncpy(resolved, fn, max_len);
+    if (access(resolved, F_OK) == 0) return 1;
+
+    // Fallback
+    snprintf(resolved, max_len, "%s/%s", app_support, fn);
+    return 0;
+}
+#else
+int ResolvePlatformPath(const char *filename, char *resolved, size_t max_len) {
+    if (!filename || filename[0] == '\0') {
+        resolved[0] = '\0';
+        return 0;
+    }
+    // Check if absolute path (Linux or Windows drive letter)
+    if (filename[0] == '/' || (filename[0] != '\0' && filename[1] == ':')) {
+        strncpy(resolved, filename, max_len);
+        return (access(resolved, F_OK) == 0);
+    }
+    
+    // Otherwise fallback to ExecFolder-relative or current directory
+    if (ExecFolder[0] != '\0') {
+        snprintf(resolved, max_len, "%s%c%s", ExecFolder, GetPathDelim(), filename);
+        if (access(resolved, F_OK) == 0) return 1;
+    }
+    
+    strncpy(resolved, filename, max_len);
+    return (access(resolved, F_OK) == 0);
+}
+#endif

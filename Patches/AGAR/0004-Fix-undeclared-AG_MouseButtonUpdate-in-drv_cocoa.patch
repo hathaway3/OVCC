@@ -1,0 +1,41 @@
+From 4f8d22b2b1a134a4cb05bec6496efd55fb121696 Mon Sep 17 00:00:00 2001
+From: Antigravity <antigravity@google.com>
+Date: Mon, 20 Jul 2026 22:38:00 -0500
+Subject: [PATCH] Fix undeclared AG_MouseButtonUpdate in drv_cocoa.m
+
+---
+ gui/drv_cocoa.m | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/gui/drv_cocoa.m b/gui/drv_cocoa.m
+index fd154fbdb..69c30b26c 100644
+--- a/gui/drv_cocoa.m
++++ b/gui/drv_cocoa.m
+@@ -644,7 +652,7 @@
+ 			if (btn == AG_MOUSE_NONE) {
+ 				break;
+ 			}
+-			AG_MouseButtonUpdate(drv->mouse, AG_BUTTON_PRESSED, btn);
++			drv->mouse->btnState |= AG_MOUSE_BUTTON(btn);
+ 			dev->type = AG_DRIVER_MOUSE_BUTTON_DOWN;
+ 			dev->win = win;
+ 			dev->button.which = btn;
+@@ -659,7 +667,7 @@
+ 		{
+ 			AG_MouseButton btn = GetMouseButton([event buttonNumber]);
+ 			
+-			AG_MouseButtonUpdate(drv->mouse, AG_BUTTON_PRESSED, btn);
++			drv->mouse->btnState |= AG_MOUSE_BUTTON(btn);
+ 			dev->type = AG_DRIVER_MOUSE_BUTTON_DOWN;
+ 			dev->win = win;
+ 			dev->button.which = btn;
+@@ -674,7 +682,7 @@
+ 		{
+ 			AG_MouseButton btn = GetMouseButton([event buttonNumber]);
+ 			
+-			AG_MouseButtonUpdate(drv->mouse, AG_BUTTON_RELEASED, btn);
++			drv->mouse->btnState &= ~AG_MOUSE_BUTTON(btn);
+ 			dev->type = AG_DRIVER_MOUSE_BUTTON_UP;
+ 			dev->win = win;
+ 			dev->button.which = btn;
+-- 

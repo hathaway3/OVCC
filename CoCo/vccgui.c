@@ -1722,20 +1722,10 @@ void KeyDownUp(AG_Event *event)
 
 #ifdef DARWIN
     // **** Added for latest MacOS ****
-    static int capslocked;
+    int capslocked = (mod & AG_KEYMOD_CAPSLOCK) != 0;
 
     if (kb == AG_KEY_CAPSLOCK)
     {
-        if (updown)
-        {
-            capslocked = 1;
-            XTRACE("CAPS locked\n");
-        }
-        else
-        {
-            capslocked = 0;
-            XTRACE("CAPS unlocked\n");
-        }
         updown = kEventKeyDown;
         DoKeyBoardEvent(uc, kb, updown);
         XTRACE("key %x - mod %x - unicode %lx - updown %x\n", kb, mod, uc, updown);

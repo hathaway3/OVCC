@@ -26,5 +26,8 @@ Exec16/
 vhds/
 testlib
 libagar-src/
+libagar-install/
 64M-card.os9
 Backups010403.os9
+git_version.txt
+ovcc.app/Contents/MacOS/ovcc-launch
