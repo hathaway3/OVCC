@@ -55,6 +55,7 @@ void ADDCALL MemPointers(MEMREAD8, MEMWRITE8);
 void ADDCALL MmuPointers(MMUREAD8, MMUWRITE8);
 unsigned char ADDCALL PakMemRead8(ushort);
 void ADDCALL ModuleStatus (char *);
+unsigned char ADDCALL ModuleReset(void);
 //void ADDCALL SetIniPath (char *);
 unsigned char MemRead(ushort);
 void MemWrite(uchar, ushort);

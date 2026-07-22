@@ -39,6 +39,38 @@ struct _queueEntry
 
 typedef struct _queueEntry QueueRequest;
 
+// Free-list pool for QueueRequest nodes, reused instead of malloc/free per
+// primitive -- a pixel-heavy CoCo program can call SetPixel/DrawLine/etc
+// tens of thousands of times per frame, and every one used to be its own
+// malloc()+free() pair. Grows on demand (one malloc the first time a node
+// is needed that nothing has freed back yet); once the working set
+// stabilizes, steady-state operation recycles nodes with no malloc/free at
+// all. Guarded by GPUlock, same as QueueList. Reuses the existing
+// nextEntry field for the free-list chain since a freed node is no longer
+// linked into QueueList.
+static QueueRequest *FreeListHead = NULL;
+
+static QueueRequest *AllocQueueRequest(void)
+{
+    QueueRequest *node;
+
+    pthread_mutex_lock(&GPUlock);
+    node = FreeListHead;
+    if (node != NULL)
+        FreeListHead = node->nextEntry;
+    pthread_mutex_unlock(&GPUlock);
+
+    return (node != NULL) ? node : malloc(sizeof(QueueRequest));
+}
+
+static void FreeQueueRequest(QueueRequest *node)
+{
+    pthread_mutex_lock(&GPUlock);
+    node->nextEntry = FreeListHead;
+    FreeListHead = node;
+    pthread_mutex_unlock(&GPUlock);
+}
+
 static LinkedList QueueList = { NULL, NULL, 0 };
 
 static short int queueActive = 1;
@@ -141,7 +173,7 @@ void *ProcessGPUqueue(void *ptr)
                 fprintf(stderr, "GPU queue process : unhandled command %d\n", request->cmd);
             break;
         }
-        free(request);
+        FreeQueueRequest(request);
     }
 
     return NULL;
@@ -155,7 +187,13 @@ void *ProcessGPUqueue(void *ptr)
 void QueueGPUrequest(unsigned int cmd, ...)
 {
     va_list       ArgumentPointer;
-    QueueRequest *newGPUrequest = malloc(sizeof(QueueRequest));
+    QueueRequest *newGPUrequest = AllocQueueRequest();
+
+    if (newGPUrequest == NULL)
+    {
+        fprintf(stderr, "GPU queue add : out of memory, dropping request %d\n", cmd);
+        return;
+    }
 
     newGPUrequest->cmd = cmd;
 
@@ -230,10 +268,11 @@ void QueueGPUrequest(unsigned int cmd, ...)
 
         default:
             // No va_start was called for this cmd, so there's nothing valid to
-            // queue -- free and bail out instead of leaking newGPUrequest and
-            // appending garbage-filled i1..p7 fields to the queue.
+            // queue -- return the node to the pool and bail out instead of
+            // leaking newGPUrequest and appending garbage-filled i1..p7
+            // fields to the queue.
             fprintf(stderr, "GPU queue add : unhandled cmd %d\n", cmd);
-            free(newGPUrequest);
+            FreeQueueRequest(newGPUrequest);
             return;
     }
     newGPUrequest->nextEntry = NULL;
@@ -303,4 +342,9 @@ void GetQueueLen(ushort lenref)
     len = QueueList.itemCnt;
 
     WriteCoCoInt(lenref, len);
+}
+
+unsigned int GPUQueueDepth(void)
+{
+    return QueueList.itemCnt;
 }

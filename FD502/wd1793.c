@@ -137,6 +137,65 @@ u_int64_t				DataLength = sizeof(KEYBOARD_INDICATOR_PARAMETERS);
 u_int64_t				ReturnedLength; // Number of bytes returned in output buffer
 static 	FILE *hKbdDev = NULL;
 /*************************************************************/
+
+// Caches the last-accessed DMK track's raw bytes so ReadSector/WriteSector/
+// GetBytefromAddress don't each re-read the whole track from disk for every
+// single sector operation -- previously every one of those calls did its
+// own fseek+fread of the full track, even for back-to-back accesses to the
+// same track (the normal case: DOS/OS9 read or write several sectors on a
+// track in a row before seeking elsewhere). WriteTrack still does its own
+// full-track I/O (see its own comment) since it's a much lower-frequency,
+// whole-track-rewrite operation not worth folding into this cache.
+static unsigned char DmkTrackCache[16384];
+static long DmkTrackCacheSize=0;
+static int DmkCacheTrack=-1,DmkCacheSide=-1;
+static unsigned char DmkCacheDisk=0xFF;
+static bool DmkCacheDirty=false;
+
+static void FlushDmkTrackCache(void)
+{
+	long fileOffset;
+
+	if (DmkCacheDisk==0xFF || !DmkCacheDirty)
+		return;
+
+	fileOffset = Drive[DmkCacheDisk].HeaderSize + ( (DmkCacheTrack * Drive[DmkCacheDisk].Sides * Drive[DmkCacheDisk].TrackSize) + (DmkCacheSide * Drive[DmkCacheDisk].TrackSize) );
+	fseek(Drive[DmkCacheDisk].FileHandle, fileOffset, SEEK_SET);
+	fwrite(DmkTrackCache, 1, DmkTrackCacheSize, Drive[DmkCacheDisk].FileHandle);
+	DmkCacheDirty=false;
+}
+
+// Loads Track/Side of the given disk into DmkTrackCache, reusing it as-is
+// if it's already the right track/side/disk. Returns 0 on I/O failure
+// (matching the callers' existing "return 0" convention for a bad read).
+static unsigned char LoadDmkTrackCache(unsigned char disk, unsigned char track, unsigned char side)
+{
+	long fileOffset;
+	unsigned long bytesRead;
+
+	if (DmkCacheDisk==disk && DmkCacheTrack==track && DmkCacheSide==side)
+		return 1;
+
+	FlushDmkTrackCache();
+
+	fileOffset = Drive[disk].HeaderSize + ( (track * Drive[disk].Sides * Drive[disk].TrackSize) + (side * Drive[disk].TrackSize) );
+	fseek(Drive[disk].FileHandle, fileOffset, SEEK_SET);
+	bytesRead = fread(DmkTrackCache, 1, Drive[disk].TrackSize, Drive[disk].FileHandle);
+
+	if (bytesRead != (unsigned long)Drive[disk].TrackSize) //DMK can't be short, the image is corrupt
+	{
+		DmkCacheDisk=0xFF;
+		return 0;
+	}
+
+	DmkCacheDisk=disk;
+	DmkCacheTrack=track;
+	DmkCacheSide=side;
+	DmkTrackCacheSize=Drive[disk].TrackSize;
+	DmkCacheDirty=false;
+	return 1;
+}
+
 unsigned char disk_io_read(unsigned char port)
 {
 	unsigned char temp;
@@ -257,7 +316,10 @@ void DecodeControlReg(unsigned char Tmp)
 		Side=0;
 	}
 	if ( !(Tmp & CTRL_MOTOR_EN))	//Turning off the drive makes the disk dirty
+	{
 		DirtyDisk=1;
+		FlushDmkTrackCache(); // commit any pending cached write before spin-down
+	}
 
 	if (LastDisk != CurrentDisk)	//If we switch from reading one Physical disk to another we need to invalidate the cache
 		DirtyDisk=1;
@@ -286,7 +348,16 @@ int mount_disk_image(char filename[MAX_PATH],unsigned char drive)
 void unmount_disk_image(unsigned char drive)
 {
 	if (Drive[drive].FileHandle !=NULL)
+	{
+		if (DmkCacheDisk==drive)
+		{
+			// Flush any pending cached write before closing -- otherwise an
+			// eject right after a write could lose that sector's data.
+			FlushDmkTrackCache();
+			DmkCacheDisk=0xFF;
+		}
 		fclose(Drive[drive].FileHandle);
+	}
 	Drive[drive].FileHandle=NULL;
 	Drive[drive].ImageType=0;
 	strcpy(Drive[drive].ImageName,"");
@@ -444,11 +515,10 @@ long ReadSector (unsigned char Side,	//0 or 1
 				 unsigned char Sector,	//1 to 18 could be 0 to 17
 				 unsigned char *ReturnBuffer)
 {
-	unsigned long BytesRead=0,Result=0,SectorLenth=0;
+	unsigned long BytesRead=0,SectorLenth=0;
 	unsigned short IdamIndex=0,Temp1=0;
 	long FileOffset=0;
 	unsigned char Density=0;
-	unsigned char TempBuffer[16384];
 	SectorInfo CurrentSector;
 //Needed for RAW access
 	DWORD dwRet;
@@ -479,18 +549,16 @@ long ReadSector (unsigned char Side,	//0 or 1
 			return(BytesperSector[Drive[CurrentDisk].SectorSize]);
 		break;
 
-		case DMK:	
-			FileOffset= Drive[CurrentDisk].HeaderSize + ( (Track * Drive[CurrentDisk].Sides * Drive[CurrentDisk].TrackSize)+ (Side * Drive[CurrentDisk].TrackSize));
-			Result=fseek(Drive[CurrentDisk].FileHandle,FileOffset,SEEK_SET);
-
-			//Need to read the entire track due to the emulation of interleave on these images
-			BytesRead = fread(TempBuffer,1,Drive[CurrentDisk].TrackSize,Drive[CurrentDisk].FileHandle);
-			if (BytesRead!=Drive[CurrentDisk].TrackSize) //DMK can't be short the image is corupt
-				return (0);
+		case DMK:
+			//Need the entire track due to the emulation of interleave on
+			//these images -- cached so back-to-back sector reads on the
+			//same track don't each re-read it from disk.
+			if (!LoadDmkTrackCache(CurrentDisk, Track, Side))
+				return (0); //DMK can't be short, the image is corrupt
 			CurrentSector.Sector=Sector;
-			if (GetSectorInfo (&CurrentSector,TempBuffer)==0)
+			if (GetSectorInfo (&CurrentSector,DmkTrackCache)==0)
 				return(0);
-			memcpy(ReturnBuffer,&TempBuffer[CurrentSector.DAM],CurrentSector.Lenth);
+			memcpy(ReturnBuffer,&DmkTrackCache[CurrentSector.DAM],CurrentSector.Lenth);
 			return(CurrentSector.Lenth);
 		break;
 
@@ -534,11 +602,10 @@ long WriteSector (	unsigned char Side,		//0 or 1
 					unsigned char *WriteBuffer, //)
 					long BytestoWrite)
 {
-	unsigned long BytesWritten=0,Result=0,BytesRead=0;
+	unsigned long BytesWritten=0,Result=0;
 	unsigned short IdamIndex=0,Temp1=0,Temp2=0;
 	unsigned int FileOffset=0;
 	unsigned char Density=0;
-	unsigned char TempBuffer[16384];
 	unsigned short Crc=0xABCD;
 //Needed for RAW access
 	DWORD dwRet;
@@ -560,25 +627,24 @@ long WriteSector (	unsigned char Side,		//0 or 1
 			return(BytesWritten);
 		break;
 
-		case DMK:	//DMK 
-			FileOffset= Drive[CurrentDisk].HeaderSize + ( (Track * Drive[CurrentDisk].Sides * Drive[CurrentDisk].TrackSize)+ (Side * Drive[CurrentDisk].TrackSize));
-			Result=fseek(Drive[CurrentDisk].FileHandle,FileOffset,SEEK_SET);
-			//Need to read the entire track due to the emulation of interleave on these images			
-			BytesRead = fread(TempBuffer,1,Drive[CurrentDisk].TrackSize,Drive[CurrentDisk].FileHandle);
-			if (BytesRead!=Drive[CurrentDisk].TrackSize)
+		case DMK:	//DMK
+			//Cached (see LoadDmkTrackCache): modify the track in memory and
+			//mark it dirty instead of rewriting the whole track to disk on
+			//every single sector write. The cache gets flushed on track
+			//change, motor-off, or unmount, so a run of sector writes to
+			//the same track costs one disk write instead of one per sector.
+			if (!LoadDmkTrackCache(CurrentDisk, Track, Side))
 				return (0);
 
 			CurrentSector.Sector=Sector;
-			if (GetSectorInfo(&CurrentSector,TempBuffer)==0)
+			if (GetSectorInfo(&CurrentSector,DmkTrackCache)==0)
 				return(0);
-			
-			memcpy(&TempBuffer[CurrentSector.DAM],WriteBuffer,BytestoWrite);
-			Crc=ccitt_crc16(0xE295,&TempBuffer[CurrentSector.DAM] , CurrentSector.Lenth); //0xcdb4
-			TempBuffer[CurrentSector.DAM + CurrentSector.Lenth  ] =Crc>>8;
-			TempBuffer[CurrentSector.DAM + CurrentSector.Lenth +1 ] =(Crc & 0xFF);
-			FileOffset= Drive[CurrentDisk].HeaderSize + ( (Track * Drive[CurrentDisk].Sides * Drive[CurrentDisk].TrackSize)+ (Side * Drive[CurrentDisk].TrackSize));
-			Result=fseek(Drive[CurrentDisk].FileHandle,FileOffset,SEEK_SET);
-			BytesWritten = fwrite(TempBuffer,1,Drive[CurrentDisk].TrackSize,Drive[CurrentDisk].FileHandle);
+
+			memcpy(&DmkTrackCache[CurrentSector.DAM],WriteBuffer,BytestoWrite);
+			Crc=ccitt_crc16(0xE295,&DmkTrackCache[CurrentSector.DAM] , CurrentSector.Lenth); //0xcdb4
+			DmkTrackCache[CurrentSector.DAM + CurrentSector.Lenth  ] =Crc>>8;
+			DmkTrackCache[CurrentSector.DAM + CurrentSector.Lenth +1 ] =(Crc & 0xFF);
+			DmkCacheDirty=true;
 			return(CurrentSector.Lenth);
 		break;
 
@@ -1168,9 +1234,6 @@ unsigned char GetBytefromAddress (unsigned char Tmp)
 {
 	unsigned char RetVal=0;
 	unsigned short Crc=0;
-//	SectorInfo CurrentSector;
-//	unsigned char TempBuffer[8192];
-	long FileOffset=0,Result=0;
 	if (TransferBufferSize == 0)
 	{
 		switch (Drive[CurrentDisk].ImageType)
@@ -1193,18 +1256,13 @@ unsigned char GetBytefromAddress (unsigned char Tmp)
 				// Reuse GetSectorInfo (already trusted by ReadSector/
 				// WriteSector) to report the real address-field bytes and a
 				// real CRC for SectorReg's IDAM entry, instead of the fixed
-				// placeholder Track/Sector/CRC this used to return.
-				unsigned long BytesRead=0;
-				unsigned char TempBuffer[16384];
+				// placeholder Track/Sector/CRC this used to return. Uses the
+				// same track cache as ReadSector/WriteSector.
 				SectorInfo CurrentSector;
-
-				FileOffset = Drive[CurrentDisk].HeaderSize + ( (Drive[CurrentDisk].HeadPosition * Drive[CurrentDisk].Sides * Drive[CurrentDisk].TrackSize) + (Side * Drive[CurrentDisk].TrackSize) );
-				Result = fseek(Drive[CurrentDisk].FileHandle, FileOffset, SEEK_SET);
-				BytesRead = fread(TempBuffer, 1, Drive[CurrentDisk].TrackSize, Drive[CurrentDisk].FileHandle);
 
 				CurrentSector.Sector = SectorReg;
 
-				if (BytesRead == (unsigned long)Drive[CurrentDisk].TrackSize && GetSectorInfo(&CurrentSector, TempBuffer) != 0)
+				if (LoadDmkTrackCache(CurrentDisk, Drive[CurrentDisk].HeadPosition, Side) && GetSectorInfo(&CurrentSector, DmkTrackCache) != 0)
 				{
 					unsigned char lenCode;
 
@@ -1302,9 +1360,7 @@ unsigned char GetBytefromTrack (unsigned char Tmp)
 
 unsigned char WriteBytetoSector (unsigned char Tmp)
 {
-	unsigned long BytesRead=0,Result=0;
-	long FileOffset=0,RetVal=0;;
-	unsigned char TempBuffer[16384];
+	long RetVal=0;
 	SectorInfo CurrentSector;
 
 	if (TransferBufferSize==0)
@@ -1325,12 +1381,14 @@ unsigned char WriteBytetoSector (unsigned char Tmp)
 			break;
 
 			case DMK:
-				FileOffset= Drive[CurrentDisk].HeaderSize + ( (Drive[CurrentDisk].HeadPosition * Drive[CurrentDisk].Sides * Drive[CurrentDisk].TrackSize)+ (Side * Drive[CurrentDisk].TrackSize));
-				Result=fseek(Drive[CurrentDisk].FileHandle,FileOffset,SEEK_SET);
-				BytesRead = fread(TempBuffer,1,Drive[CurrentDisk].TrackSize,Drive[CurrentDisk].FileHandle);
+				// Just needs the sector length before accepting write data;
+				// uses the same track cache WriteSector() will use moments
+				// later to actually commit it, so this doesn't cost a
+				// second disk read.
 				CurrentSector.Sector=SectorReg;
-				GetSectorInfo(&CurrentSector,TempBuffer);
-				if ( (CurrentSector.DAM == 0) | (BytesRead != Drive[CurrentDisk].TrackSize) )
+				if ( !LoadDmkTrackCache(CurrentDisk, Drive[CurrentDisk].HeadPosition, Side) ||
+				     GetSectorInfo(&CurrentSector,DmkTrackCache)==0 ||
+				     CurrentSector.DAM == 0 )
 				{
 					StatusReg=RECNOTFOUND;
 					CommandDone();

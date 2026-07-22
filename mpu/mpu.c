@@ -353,6 +353,30 @@ void ADDCALL ModuleConfig(unsigned char func)
 	return;
 }
 
+unsigned char ADDCALL ModuleReset(void)
+{
+	// A CoCo reset should leave no stale screens/textures/queued commands
+	// behind from before the reset. Stop the GPU thread first (this blocks
+	// until it has fully drained the queue and exited) so nothing can be
+	// mid-execution against a screen/texture while ResetScreens/
+	// ResetTextures free it, then start a fresh thread.
+#ifdef GPU_MODE_QUEUE
+	StopGPUqueue();
+#endif
+	ResetScreens();
+	ResetTextures();
+	ExecuteStatus = 0;
+#ifdef GPU_MODE_QUEUE
+	StartGPUQueue();
+#endif
+	return(0);
+}
+
+void ADDCALL ModuleStatus(char *MyStatus)
+{
+	sprintf(MyStatus, "MPU: Base=%02X Scr=%u Tex=%u Q=%u", BaseAddr, ScreenCount(), TextureCount(), GPUQueueDepth());
+}
+
 void ADDCALL PackPortWrite(unsigned char Port, unsigned char Data)
 {
 	switch (Port-BaseAddr)
@@ -382,13 +406,14 @@ void ADDCALL PackPortWrite(unsigned char Port, unsigned char Data)
 	return;
 }
 
-// unsigned char ADDCALL PackPortRead(unsigned char Port)
-// {
-// 	if (Port == BaseAddr)
-// 	{
-// 		return ExecuteStatus;
-// 	}
-// }
+unsigned char ADDCALL PackPortRead(unsigned char Port)
+{
+	if (Port-BaseAddr == REG_Command)
+	{
+		return ExecuteStatus;
+	}
+	return 0;
+}
 
 // This captures the pointers to the MemRead8 and MemWrite8 functions. This allows the DLL to do DMA xfers with CPU ram.
 

@@ -21,6 +21,8 @@ typedef struct _rect Rect;
 
 void NewTexture(unsigned short, unsigned short, unsigned short, unsigned short);
 void DestroyTexture(unsigned short);
+void ResetTextures(void);
+unsigned int TextureCount(void);
 Texture *GetTexture(unsigned short);
 void SetTextureTransparency(unsigned short, unsigned short, unsigned short);
 void LoadTexture(unsigned short, unsigned short, unsigned short);

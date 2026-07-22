@@ -86,6 +86,35 @@ void DestroyTexture(ushort id)
     free(texture);
 }
 
+// Frees every remaining texture (used by ModuleReset). Same caller
+// requirement as gpuprimitives.c's ResetScreens(): the GPU thread must be
+// stopped first so nothing is mid-execution against an object freed here.
+void ResetTextures(void)
+{
+    pthread_mutex_lock(&TextureListLock);
+    LinkedListItem *item = TextureList.ListHead;
+    while (item != NULL)
+    {
+        LinkedListItem *next = item->nextItem;
+        free(((Texture*)item)->bitmap);
+        free(item);
+        item = next;
+    }
+    TextureList.ListHead = NULL;
+    TextureList.ListTail = NULL;
+    TextureList.itemCnt = 0;
+    pthread_mutex_unlock(&TextureListLock);
+}
+
+unsigned int TextureCount(void)
+{
+    unsigned int count;
+    pthread_mutex_lock(&TextureListLock);
+    count = TextureList.itemCnt;
+    pthread_mutex_unlock(&TextureListLock);
+    return count;
+}
+
 Texture *GetTexture(ushort id)
 {
     pthread_mutex_lock(&TextureListLock);

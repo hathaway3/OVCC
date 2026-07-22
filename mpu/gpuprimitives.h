@@ -20,6 +20,8 @@ Screen *GetScreen(unsigned short int);
 
 void NewScreen(unsigned short, unsigned short, unsigned short, unsigned short, unsigned short);
 void DestroyScreen(unsigned short);
+void ResetScreens(void);
+unsigned int ScreenCount(void);
 void SetColor(unsigned short, unsigned short);
 void SetScreenColor(Screen*, unsigned short);
 void SetPixel(unsigned short, unsigned short, unsigned short);

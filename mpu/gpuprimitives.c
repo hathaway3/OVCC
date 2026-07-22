@@ -80,6 +80,35 @@ void DestroyScreen(unsigned short int id)
     free(screen);
 }
 
+// Frees every remaining screen (used by ModuleReset). Callers must ensure
+// the GPU thread isn't concurrently executing a command against any of
+// these objects -- mpu.c's ModuleReset does this by stopping the GPU
+// thread (which fully drains the command queue) before calling this.
+void ResetScreens(void)
+{
+    pthread_mutex_lock(&ScreenListLock);
+    LinkedListItem *item = ScreenList.ListHead;
+    while (item != NULL)
+    {
+        LinkedListItem *next = item->nextItem;
+        free(item);
+        item = next;
+    }
+    ScreenList.ListHead = NULL;
+    ScreenList.ListTail = NULL;
+    ScreenList.itemCnt = 0;
+    pthread_mutex_unlock(&ScreenListLock);
+}
+
+unsigned int ScreenCount(void)
+{
+    unsigned int count;
+    pthread_mutex_lock(&ScreenListLock);
+    count = ScreenList.itemCnt;
+    pthread_mutex_unlock(&ScreenListLock);
+    return count;
+}
+
 Screen *GetScreen(unsigned short int id)
 {
     pthread_mutex_lock(&ScreenListLock);
