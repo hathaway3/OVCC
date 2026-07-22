@@ -32,6 +32,14 @@ typedef int BOOL;
 static unsigned int Lba=0,LastLba;
 char Message[256]="";	//DEBUG
 static unsigned char XferBuffer[512]="";
+// Multi-sector (SecCount>1) transfer state. Lba/DiskSelect/LbaEnabled get
+// recomputed from the CHS/LBA task registers on every IdeRegWrite call
+// (including data-port writes during an active transfer), so a sector
+// counter tied to Lba directly would be stomped mid-transfer -- TransferLba
+// is a separate, internally-owned offset that only this file's continuation
+// logic advances.
+static unsigned int SectorsRemaining=0;
+static unsigned int TransferLba=0;
 
 static char *BigBuffer=NULL;
 static unsigned int BufferIndex=0;
@@ -91,14 +99,28 @@ void IdeRegWrite(unsigned char Reg,unsigned short Data)
 			{
 				if ((CurrentCommand==0x30) | (CurrentCommand==0x31))
 				{
-					fseek(hDiskFile[DiskSelect], Lba * 512,  SEEK_SET);
+					fseek(hDiskFile[DiskSelect], (long)TransferLba * 512,  SEEK_SET);
 					BytesMoved = fwrite(XferBuffer, 1, 512, hDiskFile[DiskSelect]);
 				}
-				BufferIndex=0;
-				BufferLenth=0;
-				CurrentCommand=0;
-				Registers.Status[DiskSelect]=RDY;
-				Registers.Error[DiskSelect]=0;
+
+				if (SectorsRemaining>1 && ((CurrentCommand==0x30) | (CurrentCommand==0x31)))
+				{
+					// SecCount>1: keep the data phase open for the next
+					// sector instead of ending the command here.
+					SectorsRemaining--;
+					TransferLba++;
+					BufferIndex=0;
+					Registers.Status[DiskSelect]=DRQ|RDY;
+				}
+				else
+				{
+					BufferIndex=0;
+					BufferLenth=0;
+					CurrentCommand=0;
+					SectorsRemaining=0;
+					Registers.Status[DiskSelect]=RDY;
+					Registers.Error[DiskSelect]=0;
+				}
 			}
 			break;
 		case 0x1:
@@ -126,11 +148,27 @@ void IdeRegWrite(unsigned char Reg,unsigned short Data)
 
 		default:
 			break;
-		}	//End port switch	
-		Lba=((Registers.Head&15)<<24)+(Registers.Cylindermsb<<16)+(Registers.Cylinderlsb<<8)+Registers.SecNumber;
+		}	//End port switch
 		DiskSelect=(Registers.Head >>4)&1;
 		LbaEnabled=(Registers.Head >>6)&1;
-		//LBa = [ (Cylinder * No of Heads + Heads) * Sectors/Track ] + (Sector-1) //CHS translation
+		if (LbaEnabled)
+		{
+			// Head/Cylinder/SecNumber hold a 28-bit LBA split across the
+			// task registers per the IDE spec: Head bits 0-3 = LBA[27:24],
+			// Cylinder = LBA[23:8], SecNumber = LBA[7:0].
+			Lba=((Registers.Head&15)<<24)+(Registers.Cylindermsb<<16)+(Registers.Cylinderlsb<<8)+Registers.SecNumber;
+		}
+		else
+		{
+			// CHS mode: translate using the fixed geometry this drive
+			// reports at IDENTIFY time (OpenDisk: 16 heads, 256
+			// sectors/track), so a CHS-mode driver's own conversion from
+			// its partition table matches what we do here.
+			unsigned int cyl = (Registers.Cylindermsb<<8) | Registers.Cylinderlsb;
+			unsigned int head = Registers.Head & 15;
+			unsigned int sector = Registers.SecNumber ? Registers.SecNumber : 1;
+			Lba = (cyl*16 + head)*256 + (sector-1);
+		}
 }
 
 unsigned short IdeRegRead(unsigned char Reg)
@@ -146,11 +184,31 @@ unsigned short IdeRegRead(unsigned char Reg)
 			BufferIndex+=2;
 			if (BufferIndex>=BufferLenth)
 			{
-				BufferIndex=0;
-				BufferLenth=0;
-				CurrentCommand=0;
-				Registers.Status[DiskSelect]=RDY;
-				Registers.Error[DiskSelect]=0;
+				// Registers.Data above already holds the last word of the
+				// sector that just finished -- that's still what this call
+				// returns via RetVal below. This branch only prepares the
+				// next sector's buffer/state for the *following* port read.
+				if (SectorsRemaining>1 && ((CurrentCommand==0x20) | (CurrentCommand==0x21)))
+				{
+					// SecCount>1: fetch the next sector and keep the data
+					// phase open instead of ending the command here.
+					SectorsRemaining--;
+					TransferLba++;
+					BufferIndex=0;
+					memset(XferBuffer,0,512);
+					fseek(hDiskFile[DiskSelect], (long)TransferLba * 512, SEEK_SET);
+					BytesMoved = fread(XferBuffer, 1, 512, hDiskFile[DiskSelect]);
+					Registers.Status[DiskSelect]=DRQ|RDY;
+				}
+				else
+				{
+					BufferIndex=0;
+					BufferLenth=0;
+					CurrentCommand=0;
+					SectorsRemaining=0;
+					Registers.Status[DiskSelect]=RDY;
+					Registers.Error[DiskSelect]=0;
+				}
 			//	strcpy(CurrStatus,"IDE:Idle ");
 			}
 			RetVal=Registers.Data;
@@ -233,7 +291,9 @@ void ExecuteCommand(void)
 			BufferLenth=512;
 			BufferIndex=0;
 			Registers.Status[DiskSelect]=DRQ|RDY;
-			fseek(hDiskFile[DiskSelect], Lba * 512, SEEK_SET);
+			TransferLba=Lba;
+			SectorsRemaining = Registers.SecCount ? Registers.SecCount : 256;
+			fseek(hDiskFile[DiskSelect], (long)TransferLba * 512, SEEK_SET);
 			BytesMoved = fread(XferBuffer, 1, 512, hDiskFile[DiskSelect]);
 			LastLba=Lba;
 
@@ -256,9 +316,16 @@ void ExecuteCommand(void)
 			BufferLenth=512;
 			BufferIndex=0;
 			Registers.Status[DiskSelect]=DRQ|RDY;
+			TransferLba=Lba;
+			SectorsRemaining = Registers.SecCount ? Registers.SecCount : 256;
 			break;
-		case 0x50:	//Format Track
-
+		case 0x50:	//Format Track -- no physical formatting is meaningful for
+			// a virtual disk image; acknowledge and complete immediately
+			// instead of leaving CurrentCommand latched with no data phase
+			// that would ever clear it.
+			Registers.Status[DiskSelect]=RDY;
+			Registers.Error[DiskSelect]=0;
+			CurrentCommand=0;
 			break;
 		case 0x10:	//All Recalibrate
 		case 0x11:

@@ -353,6 +353,9 @@ unsigned char MountDisk(char *FileName,unsigned char disk)
 
 	switch (Drive[disk].HeaderSize)
 	{
+	case 5:
+			// Byte 4 (sector attribute flag) isn't modeled by Drive[]; treat
+			// a full 5-byte JVC header the same as a 4-byte one.
 	case 4:
 			Drive[disk].FirstSector=HeaderBlock[3];
 	case 3:
@@ -360,8 +363,20 @@ unsigned char MountDisk(char *FileName,unsigned char disk)
 	case 2:
 			Drive[disk].Sectors = HeaderBlock[0];
 			Drive[disk].Sides = HeaderBlock[1];
-	
-	case 0:	
+
+	case 1:
+			// 1-byte JVC header: only sectors-per-track (HeaderBlock[0]) is
+			// specified. When arriving here directly (HeaderSize==1) this is
+			// the only assignment that runs, so Sides/SectorSize/FirstSector
+			// keep the defaults set above; when falling through from
+			// case 2/3/4/5 this just re-assigns the same value harmlessly.
+			// Falls through to case 0 like every other non-zero header size
+			// already does -- the OS9 sanity check there is gated on
+			// HeaderSize==0, so this always resolves to ImageType=JVC below,
+			// consistent with how 2/3/4/5-byte headers already behave.
+			Drive[disk].Sectors = HeaderBlock[0];
+
+	case 0:
 		//OS9 Image checks
 		TotalSectors = (HeaderBlock[0]<<16) + (HeaderBlock[1]<<8) + (HeaderBlock[2]);
 		TmpSides = (HeaderBlock[16] & 1)+1;
@@ -714,13 +729,62 @@ long ReadTrack (	unsigned char Side,		//0 or 1
 		case JVC:
 		case VDK:
 		case OS9:
+		{
+			// Synthesize a raw track image in the same layout WriteTrack's
+			// parser above expects: for each sector, 0xFE + track/side/
+			// sector/lenth + 2 filler bytes (its ID-field CRC, never
+			// validated on write), then 0xFB + the actual sector data. Gap
+			// bytes between fields are arbitrary filler (0x4E, the
+			// conventional MFM gap byte) -- the parser only scans for the
+			// two marker bytes, so their exact contents/spacing don't
+			// matter as long as a real marker doesn't appear early by
+			// coincidence, which 0x4E can't since it's neither 0xFE nor 0xFB.
+			unsigned char sizeCode = Drive[CurrentDisk].SectorSize;
+			unsigned short secLen = BytesperSector[sizeCode & 3];
+			unsigned short bufIdx = 0;
+			unsigned short sec;
+
 			if ((Side+1) > Drive[CurrentDisk].Sides)
 				return(0);
-			//STUB Write Me
-			return(0);
+
+			memset(WriteBuffer, 0x4E, 6272);
+
+			for (sec = Drive[CurrentDisk].FirstSector ;
+			     sec < (unsigned short)(Drive[CurrentDisk].FirstSector + Drive[CurrentDisk].Sectors) ;
+			     sec++)
+			{
+				long secOffset;
+
+				if ((unsigned long)bufIdx + 12 + 7 + 8 + 1 + secLen + 2 > 6272)
+					break; // out of room in the fixed-size track buffer
+
+				bufIdx += 12; // gap before the ID field
+
+				WriteBuffer[bufIdx++] = 0xFE;
+				WriteBuffer[bufIdx++] = Track;
+				WriteBuffer[bufIdx++] = Side;
+				WriteBuffer[bufIdx++] = (unsigned char)sec;
+				WriteBuffer[bufIdx++] = sizeCode;
+				WriteBuffer[bufIdx++] = 0;
+				WriteBuffer[bufIdx++] = 0;
+
+				bufIdx += 8; // gap before the data field
+
+				WriteBuffer[bufIdx++] = 0xFB;
+
+				secOffset = Drive[CurrentDisk].HeaderSize + ( (Track * Drive[CurrentDisk].Sides * Drive[CurrentDisk].TrackSize) + (Side * Drive[CurrentDisk].TrackSize) + (secLen * (sec - Drive[CurrentDisk].FirstSector)) );
+				fseek(Drive[CurrentDisk].FileHandle, secOffset, SEEK_SET);
+				fread(&WriteBuffer[bufIdx], 1, secLen, Drive[CurrentDisk].FileHandle);
+				bufIdx += secLen;
+
+				bufIdx += 2; // gap after data (data CRC placeholder)
+			}
+
+			return(6272);
+		}
 		break;
 
-		case DMK:	
+		case DMK:
 			FileOffset= Drive[CurrentDisk].HeaderSize + ( (Track * Drive[CurrentDisk].Sides * Drive[CurrentDisk].TrackSize)+ (Side * Drive[CurrentDisk].TrackSize)+128);
 			Result=fseek(Drive[CurrentDisk].FileHandle,FileOffset,SEEK_SET);
 			BytesRead = fread(WriteBuffer,1,(Drive[CurrentDisk].TrackSize-128),Drive[CurrentDisk].FileHandle);
@@ -1067,14 +1131,35 @@ unsigned char GetBytefromSector (unsigned char Tmp)
 	else
 	{
 //		WriteLog("READSECTOR DONE",0);
-		StatusReg=READY;
-		CommandDone();
-		if (LostDataFlag==1)
-		{
-			StatusReg=LOSTDATA;
-			LostDataFlag=0;
-		}
 		SectorReg++;
+
+		// Multi-sector mode (READSECTORM): continue straight into the next
+		// sector on this track instead of ending the command, as long as
+		// there is one. MSectorFlag was decoded in DispatchCommand but never
+		// consulted here before, so READSECTORM behaved identically to a
+		// single-sector READSECTOR.
+		if (MSectorFlag && SectorReg < (Drive[CurrentDisk].FirstSector + Drive[CurrentDisk].Sectors))
+		{
+			TransferBufferIndex=0;
+			TransferBufferSize=0;
+			StatusReg= BUSY | DRQ;
+			IOWaiter=0;
+			if (LostDataFlag==1)
+			{
+				StatusReg=LOSTDATA;
+				LostDataFlag=0;
+			}
+		}
+		else
+		{
+			StatusReg=READY;
+			CommandDone();
+			if (LostDataFlag==1)
+			{
+				StatusReg=LOSTDATA;
+				LostDataFlag=0;
+			}
+		}
 	}
 	return(RetVal);
 }
@@ -1104,14 +1189,49 @@ unsigned char GetBytefromAddress (unsigned char Tmp)
 			break;
 
 			case DMK:
-				TransferBuffer[0]= Drive[CurrentDisk].HeadPosition;; //CurrentSector.Track; not right need to get from image
-				TransferBuffer[1]= Drive[CurrentDisk].Sides;
-				TransferBuffer[2]= IndexCounter/176;
-				TransferBuffer[3]= IndexCounter/176; //Drive[CurrentDrive].SectorSize;
-				Crc = 0;//CurrentSector.CRC;
-				TransferBuffer[4]= (Crc >> 8);	
+			{
+				// Reuse GetSectorInfo (already trusted by ReadSector/
+				// WriteSector) to report the real address-field bytes and a
+				// real CRC for SectorReg's IDAM entry, instead of the fixed
+				// placeholder Track/Sector/CRC this used to return.
+				unsigned long BytesRead=0;
+				unsigned char TempBuffer[16384];
+				SectorInfo CurrentSector;
+
+				FileOffset = Drive[CurrentDisk].HeaderSize + ( (Drive[CurrentDisk].HeadPosition * Drive[CurrentDisk].Sides * Drive[CurrentDisk].TrackSize) + (Side * Drive[CurrentDisk].TrackSize) );
+				Result = fseek(Drive[CurrentDisk].FileHandle, FileOffset, SEEK_SET);
+				BytesRead = fread(TempBuffer, 1, Drive[CurrentDisk].TrackSize, Drive[CurrentDisk].FileHandle);
+
+				CurrentSector.Sector = SectorReg;
+
+				if (BytesRead == (unsigned long)Drive[CurrentDisk].TrackSize && GetSectorInfo(&CurrentSector, TempBuffer) != 0)
+				{
+					unsigned char lenCode;
+
+					TransferBuffer[0] = CurrentSector.Track;
+					TransferBuffer[1] = CurrentSector.Side;
+					TransferBuffer[2] = CurrentSector.Sector;
+					TransferBuffer[3] = 1;
+					for (lenCode = 0; lenCode < 4; lenCode++)
+						if (BytesperSector[lenCode] == CurrentSector.Lenth) { TransferBuffer[3] = lenCode; break; }
+					Crc = CurrentSector.CRC;
+				}
+				else
+				{
+					// Sector not found on this track (e.g. TrackReg doesn't
+					// match the physical head position) -- fall back to the
+					// same rotational-position approximation used above for
+					// JVC/VDK/OS9 rather than fabricating a CRC of 0.
+					TransferBuffer[0]= Drive[CurrentDisk].HeadPosition;
+					TransferBuffer[1]= Drive[CurrentDisk].Sides;
+					TransferBuffer[2]= IndexCounter/176;
+					TransferBuffer[3]= 1;
+					Crc = 0;
+				}
+				TransferBuffer[4]= (Crc >> 8);
 				TransferBuffer[5]= (Crc & 0xFF);
-				TransferBufferSize=6;				
+				TransferBufferSize=6;
+			}
 			break;
 		} //END Switch
 	}
@@ -1234,6 +1354,9 @@ unsigned char WriteBytetoSector (unsigned char Tmp)
 		if (Drive[CurrentDisk].WriteProtect != 0)
 		{
 			StatusReg=WRITEPROTECT | RECNOTFOUND;
+			CommandDone();
+			LostDataFlag=0;
+			SectorReg++;
 		}
 		else
 		{
@@ -1241,10 +1364,28 @@ unsigned char WriteBytetoSector (unsigned char Tmp)
 			StatusReg=READY;
 			if (( RetVal==0) | (LostDataFlag==1) )
 				StatusReg=LOSTDATA;
+
+			SectorReg++;
+
+			// Multi-sector mode (WRITESECTORM): continue straight into the
+			// next sector on this track instead of ending the command, as
+			// long as there is one -- mirrors GetBytefromSector's
+			// READSECTORM handling below. MSectorFlag was decoded in
+			// DispatchCommand but never consulted here before.
+			if (MSectorFlag && SectorReg < (Drive[CurrentDisk].FirstSector + Drive[CurrentDisk].Sectors))
+			{
+				TransferBufferIndex=0;
+				TransferBufferSize=0;
+				StatusReg= BUSY | DRQ;
+				LostDataFlag=0;
+				IOWaiter=0;
+			}
+			else
+			{
+				CommandDone();
+				LostDataFlag=0;
+			}
 		}
-		CommandDone();
-		LostDataFlag=0;
-		SectorReg++;
 	}
 	else
 	{
