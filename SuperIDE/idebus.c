@@ -46,7 +46,7 @@ unsigned long BytesMoved=0;
 unsigned char BusyCounter=BUSYWAIT;
 FILE *OpenDisk(char *,unsigned char);
 static unsigned short IDBlock[2][256];
-static unsigned char Mounted=0,ScanCount=0;
+static unsigned char ScanCount=0;
 static char CurrStatus[32]="IDE:Idle ";
 static char FileNames[2][MAX_PATH]={"",""};
 void IdeInit()
@@ -220,12 +220,20 @@ void ExecuteCommand(void)
 		case 0x20:	//Read Sectors /w Retry
 		case 0x21:	//Read Sectors /wo Retry
 			sprintf(CurrStatus,"IDE: Rd Sec %000000.6X",Lba);
+			memset(XferBuffer,0,512);
+			if (hDiskFile[DiskSelect] == NULL)
+			{
+				// No image mounted on this drive: abort instead of touching a NULL FILE*.
+				CurrentCommand=0;
+				Registers.Status[DiskSelect]=ERR|RDY;
+				Registers.Error[DiskSelect]=ABRT;
+				break;
+			}
 			BusyCounter=BUSYWAIT;
 			BufferLenth=512;
 			BufferIndex=0;
 			Registers.Status[DiskSelect]=DRQ|RDY;
 			fseek(hDiskFile[DiskSelect], Lba * 512, SEEK_SET);
-			memset(XferBuffer,0,512);
 			BytesMoved = fread(XferBuffer, 1, 512, hDiskFile[DiskSelect]);
 			LastLba=Lba;
 
@@ -234,11 +242,20 @@ void ExecuteCommand(void)
 		case 0x30:	//Write Sectors /w Retry
 		case 0x31:	//Write Sectors /wo Retry
 			sprintf(CurrStatus,"IDE: Wr Sec %000000.6X",Lba);
+			memset(XferBuffer,0,512);
+			if (hDiskFile[DiskSelect] == NULL)
+			{
+				// No image mounted: abort now so IdeRegWrite never buffers toward
+				// a write against a NULL FILE* (CurrentCommand==0 short-circuits it).
+				CurrentCommand=0;
+				Registers.Status[DiskSelect]=ERR|RDY;
+				Registers.Error[DiskSelect]=ABRT;
+				break;
+			}
 			BusyCounter=BUSYWAIT;
 			BufferLenth=512;
 			BufferIndex=0;
 			Registers.Status[DiskSelect]=DRQ|RDY;
-			memset(XferBuffer,0,512);
 			break;
 		case 0x50:	//Format Track
 
@@ -340,7 +357,11 @@ void DiskStatus(char *Temp)
 	if (ScanCount > 63)
 	{
 		ScanCount=0;
-		if (Mounted==1)
+		// Report on the currently head-register-selected drive (DiskSelect),
+		// not a single flag shared across master/slave -- previously,
+		// ejecting either drive cleared one shared "Mounted" bit, so ejecting
+		// drive 0 could make drive 1's status wrongly read "No Image!".
+		if (hDiskFile[DiskSelect] != INVALID_HANDLE_VALUE)
 			strcpy(CurrStatus,"IDE:Idle");
 		else
 			strcpy(CurrStatus,"IDe:No Image!");
@@ -356,16 +377,17 @@ unsigned char MountDisk(char *FileName,unsigned char DiskNumber)
 	if (hDiskFile[DiskNumber]==INVALID_HANDLE_VALUE)
 		return(FALSE);
 	strcpy(FileNames[DiskNumber],FileName);
-	Mounted=1;
 	return(TRUE);
 }
 
 unsigned char DropDisk(unsigned char DiskNumber)
 {
-	fclose(hDiskFile[DiskNumber]);
+	if (DiskNumber>1)
+		return(FALSE);
+	if (hDiskFile[DiskNumber] != INVALID_HANDLE_VALUE)
+		fclose(hDiskFile[DiskNumber]);
 	hDiskFile[DiskNumber]=INVALID_HANDLE_VALUE;
 	strcpy(FileNames[DiskNumber],"");
-	Mounted=0;
 	return(TRUE);
 }
 

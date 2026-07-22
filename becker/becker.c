@@ -44,8 +44,24 @@ static char *PakRomAddr = NULL;
 // are we retrying tcp conn
 static bool retry = false;
 
+// Guards dwSocket, retry, and the InBuffer/InReadPos/InWritePos/InBufferCount
+// ring buffer below, all shared between the CPU thread (dw_status/dw_read/
+// dw_write, invoked via PackPortRead/PackPortWrite) and the DriveWire TCP
+// thread (DWTCPThread and the functions it calls). Previously unsynchronized.
+static AG_Mutex BufferLock = AG_MUTEX_INITIALIZER;
+
+// Tracks whether hDWTCPThread currently refers to a live thread, so
+// killDWTCPThread() knows whether it's valid to join -- dw_setaddr()/
+// dw_setport() can reach killDWTCPThread() during initial config load,
+// before SetDWTCPConnectionEnable(1) has ever started a thread.
+static bool threadRunning = false;
+
 // circular buffer for socket io
 static char InBuffer[BUFFER_SIZE];
+// InBufferCount (bytes currently buffered) disambiguates a full buffer from
+// an empty one -- comparing InReadPos==InWritePos alone can't tell them
+// apart, which silently dropped/froze data once the buffer filled completely.
+static int InBufferCount = 0;
 static int InReadPos = 0;
 static int InWritePos = 0;
 
@@ -111,22 +127,32 @@ unsigned char dw_status( void )
 {
 	// check for input data waiting
 
-	if (retry | (dwSocket == 0) | (InReadPos == InWritePos))
-		return(0);
-	else
-		return(1);
+	unsigned char result;
+
+	AG_MutexLock(&BufferLock);
+	result = (retry || dwSocket == 0 || InBufferCount == 0) ? 0 : 1;
+	AG_MutexUnlock(&BufferLock);
+
+	return result;
 }
 
 // coco reads a byte
 unsigned char dw_read( void )
 {
 	// increment buffer read pos, return next byte
-	unsigned char dwdata = InBuffer[InReadPos];
+	unsigned char dwdata;
+
+	AG_MutexLock(&BufferLock);
+	dwdata = InBuffer[InReadPos];
 
 	InReadPos++;
 
 	if (InReadPos == BUFFER_SIZE)
 		InReadPos = 0;
+
+	if (InBufferCount > 0)
+		InBufferCount--;
+	AG_MutexUnlock(&BufferLock);
 
 	BytesReadSince++;
 
@@ -136,9 +162,13 @@ unsigned char dw_read( void )
 // coco writes a byte
 int dw_write( char dwdata)
 {
-	// send the byte if we're connected
+	// send the byte if we're connected; dwSocket/retry are checked and the
+	// send() itself done under BufferLock so a concurrent close from the
+	// DriveWire TCP thread can't invalidate the fd out from under this send.
+	AG_MutexLock(&BufferLock);
+
 	if ((dwSocket != 0) & (!retry))
-	{	
+	{
 		int res = send(dwSocket, &dwdata, 1, 0);
 		if (res != 1)
 		{
@@ -149,7 +179,7 @@ int dw_write( char dwdata)
 #else
 			close(dwSocket);
 #endif
-			dwSocket = 0;        
+			dwSocket = 0;
 		}
 		else
 		{
@@ -162,27 +192,43 @@ int dw_write( char dwdata)
 		fprintf(stderr, "%s", msg);
 	}
 
+	AG_MutexUnlock(&BufferLock);
+
 	return(0);
 }
 
 void killDWTCPThread(void)
 {
-	// close socket to cause io thread to die
+	// Close the socket immediately (instead of sleeping and hoping the
+	// thread notices) so any recv()/connect() the TCP thread is blocked in
+	// returns right away.
+	AG_MutexLock(&BufferLock);
 	DWTCPEnabled = false;
-	usleep(TCP_RETRY_DELAY*1000);
-
 	if (dwSocket != 0)
+	{
 #ifdef __MINGW32__
-			closesocket(dwSocket);
+		closesocket(dwSocket);
 #else
-			close(dwSocket);
+		close(dwSocket);
 #endif
+		dwSocket = 0;
+	}
+	AG_MutexUnlock(&BufferLock);
 
-	dwSocket = 0;
-		
-	// reset buffer po
+	// Wait for the thread to actually exit before returning. The caller may
+	// be about to have this pak dlclose()'d (see mpi.c's UnloadModule); if
+	// the thread were still running when that happens, it would crash.
+	if (threadRunning)
+	{
+		AG_ThreadJoin(hDWTCPThread, NULL);
+		threadRunning = false;
+	}
+
+	AG_MutexLock(&BufferLock);
 	InReadPos = 0;
 	InWritePos = 0;
+	InBufferCount = 0;
+	AG_MutexUnlock(&BufferLock);
 }
 
 // set our hostname, called from config.c
@@ -208,10 +254,18 @@ int dw_setport(char *bufdwport)
 }
 
 // try to connect with DW server
+// Only ever runs on the DriveWire TCP thread. retry/dwSocket are also read
+// (and, for dwSocket, written) from the CPU thread's dw_status/dw_read/
+// dw_write, so every assignment to them here goes through BufferLock; the
+// blocking calls themselves (gethostbyname/socket/connect) are deliberately
+// left outside the lock so they don't stall the CPU thread's buffer access.
 void attemptDWConnection( void )
 {
 
+	AG_MutexLock(&BufferLock);
 	retry = true;
+	AG_MutexUnlock(&BufferLock);
+
 	BOOL bOptValTrue = true;
 	int iOptValTrue = 1;
 
@@ -223,34 +277,42 @@ void attemptDWConnection( void )
 
 	// resolve hostname
 	struct hostent *dwSrvHost = gethostbyname(dwaddress);
-	
-	if (dwSrvHost == NULL)
+
+	if (dwSrvHost == NULL || dwSrvHost->h_addr_list[0] == NULL)
 	{
 		// invalid hostname/no dns
+		AG_MutexLock(&BufferLock);
 		retry = false;
+		AG_MutexUnlock(&BufferLock);
 //              WriteLog("failed to resolve hostname.\n",TOCONS);
+		return;
 	}
-	
+
 	// allocate socket
+	int newSocket;
 #ifdef __MINGW32__
-	dwSocket = socket (AF_INET,SOCK_STREAM,IPPROTO_TCP);
+	newSocket = socket (AF_INET,SOCK_STREAM,IPPROTO_TCP);
 #else
-	dwSocket = socket (AF_INET,SOCK_STREAM,0);
+	newSocket = socket (AF_INET,SOCK_STREAM,0);
 #endif
-	if (dwSocket == -1)
+	if (newSocket == -1)
 	{
 		// no deal
+		AG_MutexLock(&BufferLock);
+		dwSocket = 0;
 		retry = false;
+		AG_MutexUnlock(&BufferLock);
 		fprintf(stderr,"invalid socket.\n");
+		return;
 	}
 
 	// set options
 #ifdef __MINGW32__
-	setsockopt(dwSocket,IPPROTO_TCP,SO_REUSEADDR,(char *)&bOptValTrue,sizeof(bOptValTrue));
-	setsockopt(dwSocket,IPPROTO_TCP,TCP_NODELAY,(char *)&iOptValTrue,sizeof(iOptValTrue));  
+	setsockopt(newSocket,IPPROTO_TCP,SO_REUSEADDR,(char *)&bOptValTrue,sizeof(bOptValTrue));
+	setsockopt(newSocket,IPPROTO_TCP,TCP_NODELAY,(char *)&iOptValTrue,sizeof(iOptValTrue));
 #else
-	setsockopt(dwSocket,SOL_SOCKET,SO_REUSEADDR,(char *)&bOptValTrue,sizeof(bOptValTrue));
-	//setsockopt(dwSocket,SOL_SOCKET,TCP_NODELAY,(char *)&iOptValTrue,sizeof(iOptValTrue));  
+	setsockopt(newSocket,SOL_SOCKET,SO_REUSEADDR,(char *)&bOptValTrue,sizeof(bOptValTrue));
+	//setsockopt(newSocket,SOL_SOCKET,TCP_NODELAY,(char *)&iOptValTrue,sizeof(iOptValTrue));
 #endif
 	// build server address
 
@@ -263,16 +325,14 @@ void attemptDWConnection( void )
 	dwSrvAddress.sin_family = AF_INET;
 	dwSrvAddress.sin_addr = *((struct in_addr*)*dwSrvHost->h_addr_list);
 	dwSrvAddress.sin_port = htons(dwsport);
-	
+
 	// try to connect...
 
 #ifdef __MINGW32__
-	int rc = connect(dwSocket, (LPSOCKADDR)&dwSrvAddress, sizeof(dwSrvAddress));
+	int rc = connect(newSocket, (LPSOCKADDR)&dwSrvAddress, sizeof(dwSrvAddress));
 #else
-	int rc = connect(dwSocket, &dwSrvAddress, sizeof(dwSrvAddress));
+	int rc = connect(newSocket, &dwSrvAddress, sizeof(dwSrvAddress));
 #endif
-
-	retry = false;
 
 #ifdef __MINGW32__
 	if (rc==SOCKET_ERROR)
@@ -283,13 +343,22 @@ void attemptDWConnection( void )
 		// no deal
 //              WriteLog("failed to connect.\n",TOCONS);
 #ifdef __MINGW32__
-		closesocket(dwSocket);
+		closesocket(newSocket);
 #else
-		close(dwSocket);
+		close(newSocket);
 #endif
+		AG_MutexLock(&BufferLock);
 		dwSocket = 0;
+		retry = false;
+		AG_MutexUnlock(&BufferLock);
 	}
-	
+	else
+	{
+		AG_MutexLock(&BufferLock);
+		dwSocket = newSocket;
+		retry = false;
+		AG_MutexUnlock(&BufferLock);
+	}
 }
 
 // TCP connection thread
@@ -330,36 +399,58 @@ void *DWTCPThread(void *p)
 		while ((dwSocket != 0) & DWTCPEnabled)
 		{
 			// we have a connection, lets chew through some i/o
-			
-			// always read as much as possible, 
-			// max read is writepos to readpos or buffersize
-			// depending on positions of read and write ptrs
 
-			if (InReadPos > InWritePos)
-				sz = InReadPos - InWritePos;
+			// Read as much as the free space in the ring buffer allows,
+			// capped to the contiguous run to end-of-buffer (a second recv()
+			// next iteration picks up after the wrap). InBufferCount (not
+			// InReadPos vs InWritePos) is the source of truth for how much
+			// room is free, since read==write position is ambiguous between
+			// "empty" and "completely full".
+			int freeSpace;
+			int writePos;
+
+			AG_MutexLock(&BufferLock);
+			freeSpace = BUFFER_SIZE - InBufferCount;
+			writePos = InWritePos;
+			if (writePos + freeSpace > BUFFER_SIZE)
+				sz = BUFFER_SIZE - writePos;
 			else
-				sz = BUFFER_SIZE - InWritePos;
+				sz = freeSpace;
+			AG_MutexUnlock(&BufferLock);
+
+			if (sz == 0)
+			{
+				// Buffer is completely full; back off briefly instead of
+				// busy-looping until the CPU thread drains some of it via
+				// dw_read().
+				usleep(1000);
+				continue;
+			}
 
 			// read the data
-			res = recv(dwSocket,(char *)InBuffer + InWritePos, sz, 0);
+			res = recv(dwSocket,(char *)InBuffer + writePos, sz, 0);
 
 			if (res < 1)
 			{
 				// no good, bail out
+				AG_MutexLock(&BufferLock);
 #ifdef __MINGW32__
 				closesocket(dwSocket);
 #else
 				close(dwSocket);
 #endif
 				dwSocket = 0;
-			} 
+				AG_MutexUnlock(&BufferLock);
+			}
 			else
 			{
 				// good recv, inc ptr
+				AG_MutexLock(&BufferLock);
 				InWritePos += res;
 				if (InWritePos == BUFFER_SIZE)
 					InWritePos = 0;
-						
+				InBufferCount += res;
+				AG_MutexUnlock(&BufferLock);
 			}
 
 		}
@@ -367,14 +458,17 @@ void *DWTCPThread(void *p)
 	}
 
 	// close socket if necessary
+	AG_MutexLock(&BufferLock);
 	if (dwSocket != 0)
+	{
 #ifdef __MINGW32__
 		closesocket(dwSocket);
 #else
 		close(dwSocket);
 #endif
-			
-	dwSocket = 0;
+		dwSocket = 0;
+	}
+	AG_MutexUnlock(&BufferLock);
 
 	sprintf(msg,"DWTCPConnection thread terminated\n");
 	fprintf(stderr, "%s", msg);
@@ -393,16 +487,24 @@ void SetDWTCPConnectionEnable(unsigned int enable)
 		// WriteLog("DWTCPConnection has been enabled.\n",TOCONS);
 
 		// reset buffer pointers
+		AG_MutexLock(&BufferLock);
 		InReadPos = 0;
 		InWritePos = 0;
+		InBufferCount = 0;
+		AG_MutexUnlock(&BufferLock);
 
 		// start it up...
-	
+
 		if (AG_ThreadTryCreate(&hDWTCPThread, DWTCPThread, NULL)!=0)
 		{
 			fprintf(stderr, "Cannot start DWTCPConnection thread!\n");
+			// Roll back: no thread actually started, so a later
+			// SetDWTCPConnectionEnable(1) call must be able to retry --
+			// leaving DWTCPEnabled true here would permanently block that.
+			DWTCPEnabled = false;
 			return;
 		}
+		threadRunning = true;
 
 		sprintf(msg,"DWTCPConnection thread started\n");
 		fprintf(stderr, "%s", msg);
@@ -512,8 +614,10 @@ void ADDCALL ModuleStatus(char *DWStatus)
 	{
 		LastStats += sinceCalc;
 		
-		ReadSpeed = 8.0f * (BytesReadSince / (1000.0f - sinceCalc));
-		WriteSpeed = 8.0f * (BytesWrittenSince / (1000.0f - sinceCalc));
+		// kbps = bits / elapsed-ms; the 1000ms/1000bits-per-kbit factors cancel,
+		// leaving bytes*8/sinceCalc directly (sinceCalc is in milliseconds).
+		ReadSpeed = 8.0f * (BytesReadSince / (float)sinceCalc);
+		WriteSpeed = 8.0f * (BytesWrittenSince / (float)sinceCalc);
 
 		BytesReadSince = 0;
 		BytesWrittenSince = 0;
@@ -531,11 +635,6 @@ void ADDCALL ModuleStatus(char *DWStatus)
 		}
 		else
 		{
-			int buffersize = InWritePos - InReadPos;
-			if (InReadPos > InWritePos)
-				buffersize = BUFFER_SIZE - InReadPos + InWritePos;
-
-			
 			sprintf(DWStatus,"DW: ConOK  R:%04.1f W:%04.1f", ReadSpeed , WriteSpeed);
 		}
 	}
@@ -645,10 +744,11 @@ void ADDCALL SetIniPath(INIman *InimanP)
 unsigned char ADDCALL ModuleReset(void)
 {
 	fprintf(stderr, "Becker ModuleReset\n");
-	if (PakRomAddr != NULL) 
+	if (PakRomAddr != NULL)
 	{
 		memcpy(PakRomAddr, HDBRom, EXTROMSIZE);
 	}
+	return(0);
 }
 
 void ADDCALL PakRomShare(char *pakromaddr)

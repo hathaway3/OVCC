@@ -44,6 +44,13 @@ bool InitMemBoard(void)
 	return(false);
 }
 
+void FreeMemBoard(void)
+{
+	if (RamBuffer!=NULL)
+		free(RamBuffer);
+	RamBuffer=NULL;
+}
+
 bool WritePort(unsigned char Port,unsigned char Data)
 {
 	switch (Port)
@@ -63,12 +70,16 @@ bool WritePort(unsigned char Port,unsigned char Data)
 
 bool WriteArray(unsigned char Data)
 {
+	if (RamBuffer==NULL)
+		return(true);
 	RamBuffer[IndexAddress.Address]=Data;
 	return(false);
 }
 
 unsigned char ReadArray(void)
 {
+	if (RamBuffer==NULL)
+		return(0);
 	return(RamBuffer[IndexAddress.Address]);
 }
 

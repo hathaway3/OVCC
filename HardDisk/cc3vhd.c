@@ -151,11 +151,17 @@ void HDcommand(unsigned char Command)
 		fseek(HardDrive[DriveSelect], (off_t)SectorOffset.All, SEEK_SET);
 		BytesMoved = fread(SectorBuffer, 1, SECTORSIZE, HardDrive[DriveSelect]);
 
+		if (BytesMoved != SECTORSIZE)
+		{
+			Status = HD_NODSK;
+			return;
+		}
+
 		for (Temp=0; Temp < SECTORSIZE;Temp++)
 			MemWrite(SectorBuffer[Temp],Temp+DMAaddress.word);
 
 		Status = HD_OK;
-		sprintf(DStatus,"HD%d: Rd %000000.6X", DriveSelect, SectorOffset.All>>8);
+		sprintf(DStatus,"HD%d: Rd %06X", DriveSelect, SectorOffset.All>>8);
 	break;
 
 	case SECTOR_WRITE:
@@ -176,12 +182,19 @@ void HDcommand(unsigned char Command)
 
 		fseek(HardDrive[DriveSelect], (off_t)SectorOffset.All, SEEK_SET);
 		BytesMoved = fwrite(SectorBuffer, 1, SECTORSIZE, HardDrive[DriveSelect]);
+
+		if (BytesMoved != SECTORSIZE)
+		{
+			Status = HD_NODSK;
+			return;
+		}
+
 		Status = HD_OK;
-		sprintf(DStatus,"HD%d: Wr %000000.6X", DriveSelect, SectorOffset.All>>8);
+		sprintf(DStatus,"HD%d: Wr %06X", DriveSelect, SectorOffset.All>>8);
 	break;
 
 	case DISK_FLUSH:
-		//FlushFileBuffers(HardDrive[DriveSelect]);
+		fflush(HardDrive[DriveSelect]);
 		SectorOffset.All=0;
 		DMAaddress.word=0;
 		Status = HD_OK;

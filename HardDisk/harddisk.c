@@ -33,7 +33,10 @@ typedef int BOOL;
 static char moduleName[24] = { "Hard Drive + Cloud9 RTC" };
 
 size_t EXTROMSIZE = 8192;
-static char HDDfilename[MAX_PATH] = { 0 };
+// One entry per drive -- a single shared buffer here would let a load/eject
+// on one drive clobber what LoadConfig/SaveConfig/UpdateMenu think the other
+// drive's mounted filename is.
+static char HDDfilename[2][MAX_PATH] = { { 0 }, { 0 } };
 static char IniFile[MAX_PATH] = { 0 };
 
 // typedef unsigned char (*MEMREAD8)(unsigned short);
@@ -48,7 +51,7 @@ static unsigned char DiskRom[8192];
 static unsigned char ClockEnabled=1,ClockReadOnly=1;
 static void LoadHardDisk(AG_Event *);
 static void LoadConfig(void);
-static void SaveConfig(char*);
+static void SaveConfig(int);
 static void BuildMenu(void);
 static void UpdateMenu(int);
 static unsigned char LoadExtRom( char *);
@@ -142,10 +145,11 @@ void ADDCALL ModuleConfig(unsigned char func)
 
 unsigned char ADDCALL ModuleReset(void)
 {
-	if (PakRomAddr != NULL) 
+	if (PakRomAddr != NULL)
 	{
 		memcpy(PakRomAddr, DiskRom, EXTROMSIZE);
 	}
+	return(0);
 }
 
 void ADDCALL PakRomShare(char *pakromaddr)
@@ -231,7 +235,7 @@ void CPUAssertInterupt(unsigned char Interupt,unsigned char Latencey)
 static void LoadHDD(AG_Event *event)
 {
 	int disk = AG_INT(1);
-	char *hddfile = AG_STRING(2), entry[16];
+	char *hddfile = AG_STRING(2);
 	//AG_FileType *ft = AG_PTR(2);
 
     if (AG_FileExists(hddfile))
@@ -242,9 +246,8 @@ static void LoadHDD(AG_Event *event)
 		}
     }
 
-	AG_Strlcpy(HDDfilename, hddfile, sizeof(HDDfilename));
-	sprintf(entry, "VHDImage%d", disk);
-	SaveConfig(entry);
+	AG_Strlcpy(HDDfilename[disk], hddfile, sizeof(HDDfilename[disk]));
+	SaveConfig(disk);
 	UpdateMenu(disk);
 }
 
@@ -274,21 +277,21 @@ static void LoadConfig(void)
 	for(disk = 0 ; disk < 2 ; disk++)
 	{
 		sprintf(entry, "VHDImage%d", disk);
-		GetPrivateProfileString(moduleName, entry, "", HDDfilename, MAX_PATH, IniFile);
-		//fprintf(stderr, "Hard Disk : loadConfig : VHDImage %s %s\n", IniFile, HDDfilename);
+		GetPrivateProfileString(moduleName, entry, "", HDDfilename[disk], MAX_PATH, IniFile);
+		//fprintf(stderr, "Hard Disk : loadConfig : VHDImage %s %s\n", IniFile, HDDfilename[disk]);
 
-		hr = AG_OpenFile(HDDfilename, "r+");
+		hr = AG_OpenFile(HDDfilename[disk], "r+");
 
 		if (hr == NULL)
 		{
-			strcpy(HDDfilename,"");
-			WritePrivateProfileString(moduleName, entry, HDDfilename, IniFile);
+			strcpy(HDDfilename[disk],"");
+			WritePrivateProfileString(moduleName, entry, HDDfilename[disk], IniFile);
 		}
 		else
 		{
 			AG_CloseFile(hr);
-			//fprintf(stderr, "Hard Disk : loadConfig : Mounting %s %s\n", IniFile, HDDfilename);
-			MountHD(HDDfilename, disk);
+			//fprintf(stderr, "Hard Disk : loadConfig : Mounting %s %s\n", IniFile, HDDfilename[disk]);
+			MountHD(HDDfilename[disk], disk);
 		}
 
 		UpdateMenu(disk);
@@ -303,20 +306,20 @@ static void LoadConfig(void)
 	LoadExtRom(DiskRomPath);
 }
 
-static void SaveConfig(char *entry)
+static void SaveConfig(int disk)
 {
-	ValidatePath(HDDfilename);
-	WritePrivateProfileString(moduleName, entry, HDDfilename, IniFile);
+	char entry[16];
+	sprintf(entry, "VHDImage%d", disk);
+	ValidatePath(HDDfilename[disk]);
+	WritePrivateProfileString(moduleName, entry, HDDfilename[disk], IniFile);
 }
 
 void UnloadHardDisk(AG_Event *event)
 {
-	char entry[16];
 	int disk = AG_INT(1);
 	UnmountHD(disk);
-	AG_Strlcpy(HDDfilename, "", sizeof(HDDfilename));
-	sprintf(entry, "VHDImage%d", disk);
-	SaveConfig(entry);
+	AG_Strlcpy(HDDfilename[disk], "", sizeof(HDDfilename[disk]));
+	SaveConfig(disk);
 	UpdateMenu(disk);
 }
 
@@ -347,7 +350,7 @@ static void UpdateMenu(int Drive)
 {
 	char hddname[MAX_PATH];
 
-	AG_Strlcpy(hddname, HDDfilename, sizeof(hddname));
+	AG_Strlcpy(hddname, HDDfilename[Drive], sizeof(hddname));
 	PathStripPath(hddname);
 
 	AG_MenuSetLabel(itemEjectHDD[Drive], "Eject : %s", hddname);

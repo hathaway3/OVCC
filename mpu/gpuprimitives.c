@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include "mpu.h"
 #include "gpu.h"
 #include "dma.h"
@@ -7,6 +8,12 @@
 #include "linkedlists.h"
 
 LinkedList ScreenList = { NULL, NULL, 0 };
+
+// Guards ScreenList against the cross-thread race between NewScreen/GetScreen
+// (called synchronously on the CPU thread from mpu.c's ExecuteCommand) and
+// DestroyScreen (which only ever runs on the GPU thread, dispatched from the
+// command queue in gpu.c) appending/removing+freeing nodes concurrently.
+static pthread_mutex_t ScreenListLock = PTHREAD_MUTEX_INITIALIZER;
 
 static unsigned short currentID;
 
@@ -31,7 +38,9 @@ void NewScreen(unsigned short idref, unsigned short address, unsigned short widt
     NewScreen->PPBshift = -1;
     for(unsigned short int PPB = NewScreen->PixelsPerByte ; PPB ; PPB=PPB>>1) { NewScreen->PPBshift++; }
 
+    pthread_mutex_lock(&ScreenListLock);
     AppendListItem(&ScreenList, (LinkedListItem*)NewScreen);
+    pthread_mutex_unlock(&ScreenListLock);
 
     // Interegate the mmu and record the current process taskmmubank map
 
@@ -54,7 +63,9 @@ void DestroyScreen(unsigned short int id)
 {
     // fprintf(stderr, "DestroyScreen %d\n", id);
 
+    pthread_mutex_lock(&ScreenListLock);
     Screen *screen = (Screen*)RemovelistItem(&ScreenList, (unsigned int)id);
+    pthread_mutex_unlock(&ScreenListLock);
 
     if (screen == NULL) return;
 
@@ -63,7 +74,10 @@ void DestroyScreen(unsigned short int id)
 
 Screen *GetScreen(unsigned short int id)
 {
-    return (Screen*)FindListItem(&ScreenList, (unsigned int)id);
+    pthread_mutex_lock(&ScreenListLock);
+    Screen *screen = (Screen*)FindListItem(&ScreenList, (unsigned int)id);
+    pthread_mutex_unlock(&ScreenListLock);
+    return screen;
 }
 
 unsigned char GetScreenMMUmemPagefromAddress(Screen *screen, unsigned short int addr)
@@ -75,7 +89,9 @@ unsigned char GetScreenMMUmemPagefromAddress(Screen *screen, unsigned short int 
 
 void SetColor(unsigned short screenid, unsigned short color)
 {
+    pthread_mutex_lock(&ScreenListLock);
     Screen *screen = (Screen*)FindListItem(&ScreenList,  (unsigned int)screenid);
+    pthread_mutex_unlock(&ScreenListLock);
 
     if (screen == NULL) return;
 
@@ -93,7 +109,9 @@ void SetScreenColor(Screen *screen, unsigned short color)
 
 void SetPixel(unsigned short screenid, unsigned short x, unsigned short y)
 {
+    pthread_mutex_lock(&ScreenListLock);
     Screen *screen = (Screen*)FindListItem(&ScreenList,  (unsigned int)screenid);
+    pthread_mutex_unlock(&ScreenListLock);
 
     if (screen == NULL) return;
 
@@ -124,7 +142,9 @@ void SetScreenPixel(Screen *screen, unsigned short x, unsigned short y)
 
 void DrawLine(unsigned short screenid, unsigned short x1, unsigned short y1, unsigned short x2, unsigned short y2)
 {
+    pthread_mutex_lock(&ScreenListLock);
     Screen *screen = (Screen*)FindListItem(&ScreenList,  (unsigned int)screenid);
+    pthread_mutex_unlock(&ScreenListLock);
 
     if (screen == NULL) return;
 

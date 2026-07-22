@@ -34,7 +34,13 @@ This file is part of VCC (Virtual Color Computer).
 
 static time_t rawtime;
 static struct timespec tspec;
-static struct tm *now;
+// localtime() returns a pointer into a static buffer shared process-wide; other
+// pak modules with their own clocks (e.g. FD502/distortc.c) also call localtime()
+// and would silently clobber it between this cookie-match and the later SetTime()
+// call. Copy the result into our own storage immediately instead of holding onto
+// libc's pointer.
+static struct tm nowbuf;
+static struct tm *now = NULL;
 static unsigned char time_register=0;
 static uint64_t InBuffer=0;
 static uint64_t OutBuffer=0;
@@ -73,7 +79,12 @@ unsigned char ReadTime(unsigned short port)
 		{
 			clock_gettime(CLOCK_REALTIME, &tspec);
 			rawtime = tspec.tv_sec;
-			now = localtime(&rawtime);
+			{
+				struct tm *tmp = localtime(&rawtime);
+				if (tmp == NULL) break;
+				nowbuf = *tmp;
+				now = &nowbuf;
+			}
 
 			OutBuffer=0;
 			OutBuffer=((now->tm_year%100)/10)+10;
@@ -94,10 +105,14 @@ unsigned char ReadTime(unsigned short port)
 			OutBuffer<<=4;
 			TempHour=(unsigned char)now->tm_hour;
 			AmPmBit=0;
-			if ((FormatBit==1) & (TempHour>12)) //1=12 hour mode 1=PM
+			if (FormatBit==1) //1=12 hour mode
 			{
-				TempHour-=12;
-				AmPmBit=2;
+				// TempHour>12 alone missed noon (12 read as AM) and never
+				// mapped midnight (0) to 12 -- the standard %12 conversion
+				// with a >=12 AM/PM split handles both endpoints correctly.
+				AmPmBit = (TempHour>=12) ? 2 : 0;
+				TempHour %= 12;
+				if (TempHour==0) TempHour=12;
 			}
 
 			OutBuffer|= (3 & ((TempHour/10) | AmPmBit));
@@ -144,6 +159,8 @@ unsigned char ReadTime(unsigned short port)
 
 void SetTime(void)
 {
+	if (now == NULL) return;
+
 	tspec.tv_nsec = (InBuffer & 15);
 	InBuffer>>=4;
 	tspec.tv_nsec += ((InBuffer & 15)*10);
@@ -165,8 +182,12 @@ void SetTime(void)
 	if (FormatBit==1)
 	{
 		AmPmBit=(TempHour & 2);
-		now->tm_hour+=(TempHour &1) *10;	//12 Hour Mode
-		if (AmPmBit==2)
+		now->tm_hour+=(TempHour &1) *10;	//12 Hour Mode: now->tm_hour is 1..12 here
+		// 12 is the one value that doesn't just add/not-add 12: 12 AM is
+		// midnight (0 in 24-hour), 12 PM is noon (unchanged, already 12).
+		if (now->tm_hour == 12)
+			now->tm_hour = (AmPmBit==2) ? 12 : 0;
+		else if (AmPmBit==2)
 			now->tm_hour+=12;				//convert to 24hour clock
 	}
 	else

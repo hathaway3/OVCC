@@ -22,6 +22,7 @@ This file is part of VCC (Virtual Color Computer).
 #include <SDL2/SDL.h>
 #include <stdbool.h>
 #include "stdio.h"
+#include <string.h>
 #include "../CoCo/iniman.h"
 #define BOOL bool
 #include "../CoCo/fileops.h"
@@ -214,9 +215,12 @@ void ADDCALL PackPortWrite(unsigned char Port,unsigned char Data)
 		SpareSelectSlot= (Data & 3);
 		ChipSelectSlot= ( (Data & 0x30)>>4);
 		SlotRegister=Data;
-		PakSetCart(0);
-		if (CartForSlot[SpareSelectSlot]==1)
-			PakSetCart(1);
+		if (PakSetCart != NULL)
+		{
+			PakSetCart(0);
+			if (CartForSlot[SpareSelectSlot]==1)
+				PakSetCart(1);
+		}
 		return;
 	}
 	for(unsigned char Temp=0;Temp<4;Temp++)
@@ -285,18 +289,33 @@ void ADDCALL PakMemWrite8(unsigned char Data,unsigned short Address)
 	return;
 }
 
+// MyStatus is the host's StatusLine buffer (CoCo/defines.h: char StatusLine[256]).
+// TempStatus must be sized to match: sub-modules (e.g. HardDisk's DStatus[128])
+// write through it assuming a full-size status buffer, not a small local scratch.
+#define MPI_STATUS_MAX 256
+
 void ADDCALL ModuleStatus(char *MyStatus)
 {
-	char TempStatus[64]="";
-	sprintf(MyStatus,"MPI:%i,%i",ChipSelectSlot,SpareSelectSlot);
+	char TempStatus[MPI_STATUS_MAX];
+	size_t used;
+
+	snprintf(MyStatus, MPI_STATUS_MAX, "MPI:%i,%i", ChipSelectSlot, SpareSelectSlot);
+
 	for (int modidx=0;modidx<4;modidx++)
 	{
-		strcpy(TempStatus,"");
 		if (ModuleStatusCalls[modidx] != NULL)
 		{
+			TempStatus[0] = 0;
 			ModuleStatusCalls[modidx](TempStatus);
-			strcat(MyStatus,"|");
-			strcat(MyStatus,TempStatus);
+
+			used = strlen(MyStatus);
+			if (used < MPI_STATUS_MAX - 1)
+			{
+				MyStatus[used++] = '|';
+				MyStatus[used] = 0;
+
+				strncat(MyStatus, TempStatus, MPI_STATUS_MAX - 1 - used);
+			}
 		}
 	}
 	return ;
@@ -318,7 +337,7 @@ unsigned char ADDCALL ModuleReset(void)
 	SpareSelectSlot=SwitchSlot;	
 	for (int modidx=0;modidx<4;modidx++)
 	{
-		BankedCartOffset[Temp]=0; //Do I need to keep independant selects?
+		BankedCartOffset[modidx]=0; //Do I need to keep independant selects?
 		
 		if (SetInteruptCallPointerCalls[modidx] !=NULL)
 			SetInteruptCallPointerCalls[modidx](AssertInt);
@@ -343,9 +362,12 @@ unsigned char ADDCALL ModuleReset(void)
 		if (PakRomAddr != NULL && ExtRomPointers[modidx] != NULL && ExtRomSizes[modidx] != 0)
 			memcpy(PakRomAddr, ExtRomPointers[modidx], ExtRomSizes[modidx]);
 	}
-	PakSetCart(0);
-	if (CartForSlot[SpareSelectSlot]==1)
-		PakSetCart(1);
+	if (PakSetCart != NULL)
+	{
+		PakSetCart(0);
+		if (CartForSlot[SpareSelectSlot]==1)
+			PakSetCart(1);
+	}
 	return(0);
 }
 
@@ -473,7 +495,6 @@ unsigned char MountModule(unsigned char Slot,char *ModName)
 {
 	unsigned char ModuleType=0;
 	char ModuleName[MAX_PATH]="";
-	unsigned int index=0;
 	strcpy(ModuleName,ModName);
 	FILE *rom_handle;
 	if (Slot>3)
@@ -487,21 +508,25 @@ unsigned char MountModule(unsigned char Slot,char *ModName)
 
 	case 2: //ROM image
 		UnloadModule(Slot);
-		ExtRomPointers[Slot]=(unsigned char *)malloc(0x4000);
+		// PakMemRead8/ModuleReset index this buffer with a 32K mask (Address & 32767),
+		// matching the host's own cart address-space convention (see CoCo/pakinterface.c),
+		// so the allocation must be 32K, not 16K, or reads above 16K walk off the heap.
+		ExtRomPointers[Slot]=(unsigned char *)malloc(0x8000);
 		if (ExtRomPointers[Slot]==NULL)
 		{
 			AG_TextMsg(AG_MSG_INFO, "Rom pointer is NULL");
 			return(0); //Can Allocate RAM
 		}
+		memset(ExtRomPointers[Slot], 0xFF, 0x8000);
 		rom_handle=fopen(ModuleName,"rb");
 		if (rom_handle==NULL)
 		{
 			AG_TextMsg(AG_MSG_INFO, "File handle is NULL");
+			free(ExtRomPointers[Slot]);
+			ExtRomPointers[Slot]=NULL;
 			return(0);
 		}
-		while ((index<0x4000) && (feof(rom_handle)==0))
-			ExtRomPointers[Slot][index++]=fgetc(rom_handle);
-		ExtRomSizes[Slot] = --index;
+		ExtRomSizes[Slot] = (unsigned short)fread(ExtRomPointers[Slot], 1, 0x8000, rom_handle);
 		fclose(rom_handle);
 		strcpy(ModulePaths[Slot],ModuleName);
 		PathStripPath(ModuleName);

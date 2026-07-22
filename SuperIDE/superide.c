@@ -399,12 +399,18 @@ void LoadConfig(void)
 	unsigned int RetVal = 0;
 
 	GetPrivateProfileString(moduleName, "Master", "", FileName, MAX_PATH, IniFile);
-	MountDisk(FileName, MASTER);
+	// A previously-mounted image that's since been moved/deleted must not
+	// stay silently saved in the ini -- otherwise every future launch keeps
+	// retrying the same failed mount with no way for the user to notice.
+	if (strlen(FileName) && !MountDisk(FileName, MASTER))
+	{
+		WritePrivateProfileString(moduleName, "Master", "", IniFile);
+	}
 	UpdateMenu(MASTER);
 	GetPrivateProfileString(moduleName, "Slave", "", FileName, MAX_PATH, IniFile);
-	BaseAddr = GetPrivateProfileInt(moduleName, "BaseAddr", 1, IniFile); 
-	ClockEnabled = GetPrivateProfileInt(moduleName, "ClkEnable", 1, IniFile); 
-	ClockReadOnly = GetPrivateProfileInt(moduleName, "ClkRdOnly", 1, IniFile); 
+	BaseAddr = GetPrivateProfileInt(moduleName, "BaseAddr", 1, IniFile);
+	ClockEnabled = GetPrivateProfileInt(moduleName, "ClkEnable", 1, IniFile);
+	ClockReadOnly = GetPrivateProfileInt(moduleName, "ClkRdOnly", 1, IniFile);
 	BaseAddr &= 3;
 
 	if (BaseAddr == 3)
@@ -414,7 +420,10 @@ void LoadConfig(void)
 
 	BaseAddress = BaseTable[BaseAddr];
 	SetClockWrite(!ClockReadOnly);
-	MountDisk(FileName ,SLAVE);
+	if (strlen(FileName) && !MountDisk(FileName, SLAVE))
+	{
+		WritePrivateProfileString(moduleName, "Slave", "", IniFile);
+	}
 	UpdateMenu(SLAVE);
 	return;
 }

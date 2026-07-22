@@ -170,10 +170,11 @@ void ADDCALL ModuleConfig(unsigned char func)
 
 unsigned char ADDCALL ModuleReset(void)
 {
-	if (PakRomAddr != NULL) 
+	if (PakRomAddr != NULL)
 	{
 		memcpy(PakRomAddr, RomPointer[SelectRom], EXTROMSIZE);
 	}
+	return(0);
 }
 
 void ADDCALL PakRomShare(char *pakromaddr)
@@ -734,7 +735,7 @@ void LoadConfig(void)
 	SelectRom = GetPrivateProfileInt(ModName, "DiskRom", 1, IniFile);  //0 External 1=TRSDOS 2=RGB Dos
 	TempSelectRom = SelectRom;
 	GetPrivateProfileString(ModName, "RomPath", "", RomFileName, MAX_PATH, IniFile);
-	AG_Strlcpy(TempRomFileName, RomFileName, sizeof(TempFileName));
+	AG_Strlcpy(TempRomFileName, RomFileName, sizeof(TempRomFileName));
 	CheckPath(RomFileName);
 	LoadExtRom(External, RomFileName);
 #ifdef DARWIN

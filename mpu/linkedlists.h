@@ -2,7 +2,7 @@
 struct _linkedlistItem
 {
     unsigned int id;
-    struct _linkedlist *nextItem;
+    struct _linkedlistItem *nextItem;
 };
 
 typedef struct _linkedlistItem LinkedListItem;

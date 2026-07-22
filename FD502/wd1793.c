@@ -1225,15 +1225,24 @@ unsigned char WriteBytetoSector (unsigned char Tmp)
 		}	//END Switch
 	}	//END if
 
-	if (TransferBufferIndex>=TransferBufferSize) 
+	if (TransferBufferIndex>=TransferBufferSize)
 	{
-		RetVal=WriteSector(Side,Drive[CurrentDisk].HeadPosition,SectorReg,TransferBuffer,TransferBufferSize);
-		StatusReg=READY;
-		if (( RetVal==0) | (LostDataFlag==1) )
-			StatusReg=LOSTDATA;
+		// Check write-protect BEFORE writing -- WriteSector() itself doesn't
+		// consult WriteProtect, so checking only afterward (as this used to)
+		// let a write-protected image's underlying file be modified on disk;
+		// the WRITEPROTECT status was purely cosmetic by the time it was set.
 		if (Drive[CurrentDisk].WriteProtect != 0)
+		{
 			StatusReg=WRITEPROTECT | RECNOTFOUND;
-		CommandDone();	
+		}
+		else
+		{
+			RetVal=WriteSector(Side,Drive[CurrentDisk].HeadPosition,SectorReg,TransferBuffer,TransferBufferSize);
+			StatusReg=READY;
+			if (( RetVal==0) | (LostDataFlag==1) )
+				StatusReg=LOSTDATA;
+		}
+		CommandDone();
 		LostDataFlag=0;
 		SectorReg++;
 	}
@@ -1252,15 +1261,21 @@ unsigned char WriteBytetoTrack (unsigned char Tmp)
 		TransferBufferSize=6272 ;
 
 
-	if (TransferBufferIndex>=TransferBufferSize) 
+	if (TransferBufferIndex>=TransferBufferSize)
 	{
-		RetVal=WriteTrack(Side,Drive[CurrentDisk].HeadPosition,SectorReg,TransferBuffer);
-
-		StatusReg=READY;
-		if (( RetVal==0) | (LostDataFlag==1) )
-			StatusReg=LOSTDATA;
+		// See WriteBytetoSector(): check write-protect before writing, not after.
 		if (Drive[CurrentDisk].WriteProtect != 0)
+		{
 			StatusReg=WRITEPROTECT | RECNOTFOUND;
+		}
+		else
+		{
+			RetVal=WriteTrack(Side,Drive[CurrentDisk].HeadPosition,SectorReg,TransferBuffer);
+
+			StatusReg=READY;
+			if (( RetVal==0) | (LostDataFlag==1) )
+				StatusReg=LOSTDATA;
+		}
 		CommandDone();
 		LostDataFlag=0;
 	}

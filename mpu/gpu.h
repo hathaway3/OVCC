@@ -1,4 +1,4 @@
-void QueueGPUrequest(unsigned char, ...);
+void QueueGPUrequest(unsigned int, ...);
 void StartGPUQueue();
 void StopGPUqueue();
 void ReportQueue();

@@ -11,9 +11,14 @@
 #include "linkedlists.h"
 
 static pthread_t GPUthread;
-static pthread_mutex_t GPUlock;
-static pthread_cond_t GPUcond;
-static pthread_mutex_t condLock;
+// GPUlock guards both QueueList's pointers and the queueActive/predicate check,
+// and is the mutex paired with GPUcond -- a single lock so the "is there work,
+// or are we stopping" check and the cond_wait are atomic with respect to
+// QueueGPUrequest()'s append+signal, which avoids the classic lost-wakeup race
+// that existed here before (a separate condLock meant a signal could arrive
+// between the empty-check and the wait, with no one blocked to receive it).
+static pthread_mutex_t GPUlock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t GPUcond = PTHREAD_COND_INITIALIZER;
 
 struct _queueEntry
 {
@@ -33,8 +38,6 @@ static short int queueProcessing = 1;
 
 #ifdef GPU_MODE_QUEUE
 
-void RemoveGPUrequest(QueueRequest *);
-
 static void GPUsigHandler(int signo)
 {
     // write(0, "!", 1);
@@ -52,61 +55,92 @@ void *ProcessGPUqueue(void *ptr)
 
     // fprintf(stderr, "GPU queue alive\n");
 
-    while(queueActive)
+    for (;;)
     {
-        while(QueueList.ListHead != NULL)
+        // Pop the head under GPUlock: the predicate check ("is there work, or
+        // are we stopping") and the cond_wait share the same mutex, so a
+        // request appended (and signaled) by QueueGPUrequest() between our
+        // check and the wait can't be missed -- either we see it in the
+        // itemCnt check, or we're already asleep in pthread_cond_wait and the
+        // signal wakes us. The `while` (not `if`) also absorbs spurious
+        // wakeups. Once popped, the request is unlinked from the shared list,
+        // so it's safe to read/dispatch/free it without holding the lock.
+        pthread_mutex_lock(&GPUlock);
+        while (queueActive && QueueList.itemCnt == 0)
+            pthread_cond_wait(&GPUcond, &GPUlock);
+
+        if (!queueActive && QueueList.itemCnt == 0)
         {
-            QueueRequest *request = (QueueRequest*)(QueueList.ListHead);
-            switch (request->cmd)
-            {
-                case CMD_DestroyScreen:
-                    DestroyScreen(request->i1);
-                break;
-
-                case CMD_SetColor:
-                    SetColor(request->i1, request->i2);
-                break;
-
-                case CMD_SetPixel:
-                    SetPixel(request->i1, request->i2, request->i3);
-                break;
-
-                case CMD_DrawLine:
-                    DrawLine(request->i1, request->i2, request->i3, request->i4, request->i5);
-                break;
-
-                case CMD_DestroyTexture:
-                    DestroyTexture(request->i1);
-                break;
-
-                case CMD_SetTextureTransparency:
-                    SetTextureTransparency(request->i1, request->i2, request->i3);
-                break;
-
-                case CMD_LoadTexture:
-                    LoadTexture(request->i1, request->i2, request->i3);
-                break;
-
-                case CMD_RenderTexture:
-                    // fprintf(stderr, "ProcessGPUqueue : RenderTexture %d %d %d %d\n",
-                    //     ((Rect*)(request->p3))->x, ((Rect*)(request->p3))->y, ((Rect*)(request->p3))->w, ((Rect*)(request->p3))->h);
-                    QRenderTexture(request->p1, request->p2, request->i1, request->i2, request->p3);
-                break;
-
-                default:
-                    fprintf(stderr, "GPU queue process : unhandled command %d\n", request->cmd);
-                break;
-            }
-            RemoveGPUrequest(request);
+            pthread_mutex_unlock(&GPUlock);
+            break;
         }
+        QueueRequest *request = (QueueRequest*)RemoveListHead(&QueueList);
+        pthread_mutex_unlock(&GPUlock);
 
-    	pthread_mutex_lock(&condLock);
-	    pthread_cond_wait(&GPUcond, &condLock);
-        pthread_mutex_unlock(&condLock);
+        if (request == NULL) continue;
+
+        switch (request->cmd)
+        {
+            case CMD_DestroyScreen:
+                DestroyScreen(request->i1);
+            break;
+
+            case CMD_SetColor:
+                SetColor(request->i1, request->i2);
+            break;
+
+            case CMD_SetPixel:
+                SetPixel(request->i1, request->i2, request->i3);
+            break;
+
+            case CMD_DrawLine:
+                DrawLine(request->i1, request->i2, request->i3, request->i4, request->i5);
+            break;
+
+            case CMD_DestroyTexture:
+                DestroyTexture(request->i1);
+            break;
+
+            case CMD_SetTextureTransparency:
+                SetTextureTransparency(request->i1, request->i2, request->i3);
+            break;
+
+            case CMD_LoadTexture:
+                LoadTexture(request->i1, request->i2, request->i3);
+            break;
+
+            case CMD_RenderTexture:
+            {
+                // Resolve screenid/textureid to Screen*/Texture* here, on the
+                // GPU thread, immediately before use -- see the comment in
+                // gputextures.c's RenderTexture() for why this can't be
+                // resolved earlier on the CPU thread.
+                Screen *screen = GetScreen(request->i1);
+                Texture *texture = GetTexture(request->i2);
+
+                if (screen != NULL && texture != NULL)
+                    QRenderTexture(screen, texture, request->i3, request->i4, request->p3);
+                else if (request->p3 != NULL)
+                    free(request->p3);
+            }
+            break;
+
+            default:
+                fprintf(stderr, "GPU queue process : unhandled command %d\n", request->cmd);
+            break;
+        }
+        free(request);
     }
+
+    return NULL;
 }
 
-void QueueGPUrequest(unsigned char cmd, ...)
+// cmd is declared int (not unsigned char) because va_start's named parameter
+// must not be one that undergoes default argument promotion -- a narrower
+// type there is undefined behavior per C11 7.16.1.4, regardless of the actual
+// values passed. Callers passing a narrower type (e.g. mpu.c's unsigned char
+// cmd) still convert safely through the ordinary prototype-based conversion.
+void QueueGPUrequest(unsigned int cmd, ...)
 {
     va_list       ArgumentPointer;
     QueueRequest *newGPUrequest = malloc(sizeof(QueueRequest));
@@ -116,68 +150,80 @@ void QueueGPUrequest(unsigned char cmd, ...)
     switch (cmd)
     {
         case CMD_DestroyScreen: // 1 short int - Screen ID
-            va_start(ArgumentPointer, 1);
+            va_start(ArgumentPointer, cmd);
             newGPUrequest->i1 = va_arg(ArgumentPointer, int);
+            va_end(ArgumentPointer);
         break;
-        
+
         case CMD_SetColor: // 2 short ints - Screen ID, Color
-            va_start(ArgumentPointer, 2);
+            va_start(ArgumentPointer, cmd);
             newGPUrequest->i1 = va_arg(ArgumentPointer, int);
             newGPUrequest->i2 = va_arg(ArgumentPointer, int);
+            va_end(ArgumentPointer);
         break;
-        
+
         case CMD_SetPixel: // 3 short ints - Screen ID, x, y
-            va_start(ArgumentPointer, 3);
+            va_start(ArgumentPointer, cmd);
             newGPUrequest->i1 = va_arg(ArgumentPointer, int);
             newGPUrequest->i2 = va_arg(ArgumentPointer, int);
             newGPUrequest->i3 = va_arg(ArgumentPointer, int);
+            va_end(ArgumentPointer);
         break;
-        
+
         case CMD_DrawLine: // 5 short ints - Screen ID, x1, y1, x2, y2
-            va_start(ArgumentPointer, 5);
+            va_start(ArgumentPointer, cmd);
             newGPUrequest->i1 = va_arg(ArgumentPointer, int);
             newGPUrequest->i2 = va_arg(ArgumentPointer, int);
             newGPUrequest->i3 = va_arg(ArgumentPointer, int);
             newGPUrequest->i4 = va_arg(ArgumentPointer, int);
             newGPUrequest->i5 = va_arg(ArgumentPointer, int);
+            va_end(ArgumentPointer);
         break;
-        
+
         case CMD_DestroyTexture: // 1 short int1 - Texture ID
-            va_start(ArgumentPointer, 1);
+            va_start(ArgumentPointer, cmd);
             newGPUrequest->i1 = va_arg(ArgumentPointer, int);
+            va_end(ArgumentPointer);
         break;
 
         case CMD_SetTextureTransparency: // 3 short ints - Texture ID, onoff, color
-            va_start(ArgumentPointer, 3);
+            va_start(ArgumentPointer, cmd);
             newGPUrequest->i1 = va_arg(ArgumentPointer, int);
             newGPUrequest->i2 = va_arg(ArgumentPointer, int);
             newGPUrequest->i3 = va_arg(ArgumentPointer, int);
+            va_end(ArgumentPointer);
         break;
-        
+
         case CMD_LoadTexture: // 3 short ints - Screen ID, Texture ID, memaddr
-            va_start(ArgumentPointer, 3);
+            va_start(ArgumentPointer, cmd);
             newGPUrequest->i1 = va_arg(ArgumentPointer, int);
             newGPUrequest->i2 = va_arg(ArgumentPointer, int);
             newGPUrequest->i3 = va_arg(ArgumentPointer, int);
+            va_end(ArgumentPointer);
         break;
-        
-        case CMD_RenderTexture: // 2 refs + 2 short ints + 1 Ref - Screen*, Texture*, screenx, screeny, Texture_Rectangle*
-            va_start(ArgumentPointer, 5);
-            newGPUrequest->p1 = va_arg(ArgumentPointer, void*);
-            newGPUrequest->p2 = va_arg(ArgumentPointer, void*);
+
+        case CMD_RenderTexture: // screenid, textureid, screenx, screeny, Rect*
+            // Ids (not resolved Screen*/Texture* pointers) are queued
+            // deliberately -- see the comment in gputextures.c's
+            // RenderTexture(). The lookup happens in ProcessGPUqueue, right
+            // before use, so it can't race a queued destroy for the same id.
+            va_start(ArgumentPointer, cmd);
             newGPUrequest->i1 = va_arg(ArgumentPointer, int);
             newGPUrequest->i2 = va_arg(ArgumentPointer, int);
+            newGPUrequest->i3 = va_arg(ArgumentPointer, int);
+            newGPUrequest->i4 = va_arg(ArgumentPointer, int);
             newGPUrequest->p3 = va_arg(ArgumentPointer, void*);
-            // fprintf(stderr, "QueueGPUrequest : RenderTexture %d %d %d %d\n",
-            //     ((Rect*)(newGPUrequest->p3))->x, ((Rect*)(newGPUrequest->p3))->y, ((Rect*)(newGPUrequest->p3))->w, ((Rect*)(newGPUrequest->p3))->h);
+            va_end(ArgumentPointer);
         break;
 
         default:
+            // No va_start was called for this cmd, so there's nothing valid to
+            // queue -- free and bail out instead of leaking newGPUrequest and
+            // appending garbage-filled i1..p7 fields to the queue.
             fprintf(stderr, "GPU queue add : unhandled cmd %d\n", cmd);
-        break;
+            free(newGPUrequest);
+            return;
     }
-
-    va_end(ArgumentPointer);
     newGPUrequest->nextEntry = NULL;
 
     pthread_mutex_lock(&GPUlock);
@@ -186,16 +232,6 @@ void QueueGPUrequest(unsigned char cmd, ...)
 
     // Only wake the GPU thread if it is asleep
     pthread_cond_signal(&GPUcond);
-}
-
-void RemoveGPUrequest(QueueRequest *queueRequest)
-{
-    if (queueRequest == NULL) return;
-    pthread_mutex_lock(&GPUlock);
-    QueueRequest *request = (QueueRequest*)RemoveListHead(&QueueList);
-    pthread_mutex_unlock(&GPUlock);
-    if (queueRequest != request) { fprintf(stderr, "Queue head not = request\n");}
-    free(queueRequest);
 }
 
 void StartGPUQueue()
@@ -208,9 +244,15 @@ void StartGPUQueue()
     action.sa_handler = GPUsigHandler;
     sigaction(SIGUSR1, &action, NULL);
 
-    pthread_create(&GPUthread, NULL, ProcessGPUqueue, NULL);
+    // queueActive is reset here (not just at static-init time) because a pak
+    // eject/reinsert cycle calls StopGPUqueue() then StartGPUQueue() again in
+    // the same process; without this, the second thread would see
+    // queueActive already 0 from the previous stop and exit immediately.
+    queueActive = 1;
 
-    if (GPUthread == 0) 
+    int rc = pthread_create(&GPUthread, NULL, ProcessGPUqueue, NULL);
+
+    if (rc != 0)
     {
         fprintf(stderr, "Cannot start GPU thread\n");
     }
@@ -218,9 +260,18 @@ void StartGPUQueue()
 
 void StopGPUqueue()
 {
-    // write(2, "GPU queue stopping\n", 19);
+    pthread_mutex_lock(&GPUlock);
     queueActive = 0;
+    pthread_mutex_unlock(&GPUlock);
+
     pthread_cond_signal(&GPUcond);
+
+    // Wait for the thread to actually exit before returning. The caller
+    // (mpu.c's ModuleConfig(0)) runs right before the pak is dlclose()'d
+    // (see mpi.c's UnloadModule); without this join, the GPU thread could
+    // still be executing code from this .so's text segment at the moment
+    // it's unmapped, which crashes.
+    pthread_join(GPUthread, NULL);
 }
 #endif
 

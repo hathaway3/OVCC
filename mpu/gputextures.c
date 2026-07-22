@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include "mpu.h"
 #include "gpu.h"
 #include "gpuprimitives.h"
@@ -10,6 +11,11 @@
 unsigned char GetScreenMMUmemPagefromAddress(Screen *screen, unsigned short int addr);
 
 LinkedList TextureList = { NULL, NULL, 0 };
+
+// Guards TextureList against the cross-thread race between NewTexture (CPU
+// thread, mpu.c's ExecuteCommand) and DestroyTexture (GPU thread only, via
+// the command queue in gpu.c) appending/removing+freeing nodes concurrently.
+static pthread_mutex_t TextureListLock = PTHREAD_MUTEX_INITIALIZER;
 
 static ushort currentID;
 
@@ -37,7 +43,9 @@ void NewTexture(ushort idref, ushort w, ushort h, ushort bpp)
     NewTexture->ppbshift = -1;
     for(unsigned short int PPB = NewTexture->ppb ; PPB ; PPB=PPB>>1) { NewTexture->ppbshift++; }
 
+    pthread_mutex_lock(&TextureListLock);
     AppendListItem(&TextureList, (LinkedListItem*)NewTexture);
+    pthread_mutex_unlock(&TextureListLock);
 
     // return the id to the caller
 
@@ -48,12 +56,22 @@ void DestroyTexture(ushort id)
 {
     // fprintf(stderr, "DestroyTexture %d\n", id);
 
+    pthread_mutex_lock(&TextureListLock);
     Texture *texture = (Texture*)RemovelistItem(&TextureList, (unsigned int)id);
+    pthread_mutex_unlock(&TextureListLock);
 
     if (texture == NULL) return;
 
     free(texture->bitmap);
     free(texture);
+}
+
+Texture *GetTexture(ushort id)
+{
+    pthread_mutex_lock(&TextureListLock);
+    Texture *texture = (Texture*)FindListItem(&TextureList, (unsigned int)id);
+    pthread_mutex_unlock(&TextureListLock);
+    return texture;
 }
 
 void LoadTexture(ushort screenid, ushort textureid, ushort memaddr)
@@ -64,7 +82,7 @@ void LoadTexture(ushort screenid, ushort textureid, ushort memaddr)
 
     if (screen == NULL) return;
 
-    Texture *texture = (Texture*)FindListItem(&TextureList, (ushort)textureid);
+    Texture *texture = GetTexture(textureid);
 
     if (texture == NULL) return;
 
@@ -79,7 +97,7 @@ void SetTextureTransparency(ushort id, ushort transparencyonoff, ushort color)
 {
     // fprintf(stderr, "SetTextureTransparency %d %d %d\n", id, transparencyonoff, color);
 
-    Texture *texture = (Texture*)FindListItem(&TextureList,  (unsigned int)id);
+    Texture *texture = GetTexture(id);
 
     if (texture == NULL) return;
 
@@ -89,14 +107,6 @@ void SetTextureTransparency(ushort id, ushort transparencyonoff, ushort color)
 
 void RenderTexture(ushort screenid, ushort textureid, ushort sx, ushort sy, ushort rectref)
 {
-    Screen *screen = GetScreen(screenid);
-
-    if (screen == NULL) return;
-
-    Texture *texture = (Texture*)FindListItem(&TextureList, (ushort)textureid);
-
-    if (texture == NULL) return;
-
     Rect *rect = NULL;
 
     if (rectref != NULL)
@@ -106,9 +116,19 @@ void RenderTexture(ushort screenid, ushort textureid, ushort sx, ushort sy, usho
         *rect = *((Rect*)&bytes);
     }
 
-    // fprintf(stderr, "RenderTexture %d %d %d %d %d %d %d %d\n", screenid, textureid, sx, sy, rect->x, rect->y, rect->w, rect->h);
+    // fprintf(stderr, "RenderTexture %d %d %d %d\n", screenid, textureid, sx, sy);
 
-    QueueGPUrequest(CMD_RenderTexture, screen, texture, sx, sy, rect);
+    // Defer the screenid/textureid -> Screen*/Texture* lookup to the GPU
+    // thread, right before QRenderTexture() actually uses the result
+    // (gpu.c's ProcessGPUqueue does the resolution). Resolving here instead
+    // and queuing the raw pointers would let an already-queued (but not yet
+    // executed) DestroyScreen/DestroyTexture for the same id free the object
+    // before this queued render runs, since program order between this
+    // direct call and the queued destroy isn't otherwise preserved -- a
+    // classic TOCTOU/use-after-free window. Passing ids keeps the resolution
+    // and the use atomic with respect to destroys, since both then happen on
+    // the single GPU thread.
+    QueueGPUrequest(CMD_RenderTexture, (unsigned int)screenid, (unsigned int)textureid, sx, sy, rect);
 }
 
 void QRenderTexture(Screen *screen, Texture *texture, ushort sx, ushort sy, Rect *rect)

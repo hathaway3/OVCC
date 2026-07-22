@@ -46,17 +46,29 @@ void __attribute__ ((constructor)) initLibrary(void) {
 }
 
 void __attribute__ ((destructor)) cleanUpLibrary(void) {
- //
- // Function that is called when the library is »closed«.
- //
- //   printf("ramdisk is exited\n"); 
+	// Belt-and-suspenders: also freed via ModuleConfig(0) on eject, but this
+	// guarantees the 512K buffer is released if the .so is unloaded directly.
+	FreeMemBoard();
 }
 
 void ADDCALL ModuleName(char *ModName, void *Temp)
 {
 	ModName = strcpy(ModName, moduleName);
-	InitMemBoard();	
+	InitMemBoard();
 	return ;
+}
+
+void ADDCALL ModuleConfig(unsigned char func)
+{
+	switch (func)
+	{
+	case 0: // Destroy Menus / unload
+		FreeMemBoard();
+		break;
+
+	default:
+		break;
+	}
 }
 
 void ADDCALL PackPortWrite(unsigned char Port,unsigned char Data)
