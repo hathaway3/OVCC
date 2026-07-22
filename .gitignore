@@ -31,3 +31,4 @@ libagar-install/
 Backups010403.os9
 git_version.txt
 ovcc.app/Contents/MacOS/ovcc-launch
+ovcc.app/Contents/Info.plist

@@ -79,6 +79,17 @@ install:
 	install -m 0755 ../Makefiles/Darwin/ovcc-launch ../ovcc.app/Contents/MacOS/ovcc-launch
 	sed 's/@VERSION@/$(GIT_VERSION)/g' ../Makefiles/Darwin/Info.plist.template > ../ovcc.app/Contents/Info.plist
 	dylibbundler -of -b -p @executable_path/../Frameworks/ -x ../ovcc.app/Contents/MacOS/$(TARGET) -d ../ovcc.app/Contents/Frameworks -s $(BREW_PREFIX)/lib -s /usr/local/lib
+	@# Homebrew's "sdl2" is the sdl2-compat shim, which dlopens libSDL3 at
+	@# startup. dylibbundler only follows link-time deps, so it copies the shim
+	@# but not SDL3; without SDL3 in the bundle the shim aborts in dllinit before
+	@# main() runs. Copy SDL3 in alongside it and re-sign the bundle.
+	@if [ -f ../ovcc.app/Contents/Frameworks/libSDL2-2.0.0.dylib ] && [ -f $(BREW_PREFIX)/lib/libSDL3.dylib ]; then \
+		echo "Copying libSDL3.dylib (sdl2-compat dependency)..."; \
+		cp -L $(BREW_PREFIX)/lib/libSDL3.dylib ../ovcc.app/Contents/Frameworks/libSDL3.dylib; \
+		chmod +w ../ovcc.app/Contents/Frameworks/libSDL3.dylib; \
+		install_name_tool -id @rpath/libSDL3.dylib ../ovcc.app/Contents/Frameworks/libSDL3.dylib; \
+	fi
+	codesign --force --deep -s - ../ovcc.app
 
 test:
 # No test for $(TARGET)
