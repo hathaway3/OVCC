@@ -20,6 +20,14 @@ static pthread_t GPUthread;
 static pthread_mutex_t GPUlock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t GPUcond = PTHREAD_COND_INITIALIZER;
 
+// Bounds queue growth if the GPU thread ever falls behind the producer (a
+// pixel-heavy program can otherwise queue requests faster than they're
+// drawn, growing without limit). QueueGPUrequest() blocks the CPU thread
+// once the queue reaches this depth, and ProcessGPUqueue() wakes it via
+// GPUnotFullCond after every dequeue.
+#define GPU_QUEUE_MAX_DEPTH 65536
+static pthread_cond_t GPUnotFullCond = PTHREAD_COND_INITIALIZER;
+
 struct _queueEntry
 {
     unsigned int id;
@@ -76,6 +84,10 @@ void *ProcessGPUqueue(void *ptr)
         }
         QueueRequest *request = (QueueRequest*)RemoveListHead(&QueueList);
         pthread_mutex_unlock(&GPUlock);
+
+        // Wake a producer that's blocked in QueueGPUrequest() waiting for
+        // room (see GPU_QUEUE_MAX_DEPTH).
+        pthread_cond_signal(&GPUnotFullCond);
 
         if (request == NULL) continue;
 
@@ -227,6 +239,10 @@ void QueueGPUrequest(unsigned int cmd, ...)
     newGPUrequest->nextEntry = NULL;
 
     pthread_mutex_lock(&GPUlock);
+    // Backpressure: block the CPU thread here instead of growing the queue
+    // without limit if the GPU thread is behind (or stalled).
+    while (QueueList.itemCnt >= GPU_QUEUE_MAX_DEPTH)
+        pthread_cond_wait(&GPUnotFullCond, &GPUlock);
     AppendListItem(&QueueList, (LinkedListItem*)newGPUrequest);
     pthread_mutex_unlock(&GPUlock);
 

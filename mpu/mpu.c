@@ -226,7 +226,7 @@ void ExecuteCommand(unsigned char cmd)
 #ifdef GPU_MODE_QUEUE
 				QueueGPUrequest(cmd, Params[0], Params[1], Params[2], Params[3], Params[4]);
 #else			
-				DrawLine(Params[0], Params[1], Params[2], Params[3]), Params[4];
+				DrawLine(Params[0], Params[1], Params[2], Params[3], Params[4]);
 #endif
 		break;
 

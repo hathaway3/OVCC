@@ -23,20 +23,40 @@ void NewTexture(ushort idref, ushort w, ushort h, ushort bpp)
 {
     // fprintf(stderr, "NewTexture %x %d %d %d\n", idref, w, h, bpp);
 
-    if (bpp == 0) { WriteCoCoInt(idref, 0xFFFF); return ; };
+    // ppb = 8/bpp below assumes bpp evenly divides 8; anything else (e.g. 3,
+    // or >8) corrupts the pitch/shift math used by every subsequent
+    // LoadTexture/QRenderTexture call against this texture.
+    if (bpp != 1 && bpp != 2 && bpp != 4 && bpp != 8)
+    {
+        WriteCoCoInt(idref, 0xFFFF);
+        return;
+    }
+
+    unsigned int ppb = 8 / bpp;
+    unsigned int pitch = w / ppb;
+    // bitmapsize is a ushort field, so compute in a wider type first and
+    // reject sizes that would silently wrap/truncate when stored.
+    unsigned int bitmapsize = pitch * h;
+    if (bitmapsize == 0 || bitmapsize > 0xFFFF)
+    {
+        WriteCoCoInt(idref, 0xFFFF);
+        return;
+    }
 
     Texture *NewTexture = malloc(sizeof(Texture));
+    if (NewTexture == NULL) { WriteCoCoInt(idref, 0xFFFF); return; }
 
     NewTexture->id = ++currentID;
     NewTexture->w = w;
     NewTexture->h = h;
     NewTexture->bpp = bpp;
-    NewTexture->ppb = 8 / bpp;
-    NewTexture->pitch = w / NewTexture->ppb;
-    NewTexture->bitmapsize = NewTexture->pitch * h;
+    NewTexture->ppb = (ushort)ppb;
+    NewTexture->pitch = (ushort)pitch;
+    NewTexture->bitmapsize = (ushort)bitmapsize;
     NewTexture->tranparencyColor = 0;
     NewTexture->transparencyActive = 0;
     NewTexture->bitmap = malloc(NewTexture->bitmapsize);
+    if (NewTexture->bitmap == NULL) { free(NewTexture); WriteCoCoInt(idref, 0xFFFF); return; }
     NewTexture->nextTexture = NULL;
     NewTexture->savemap = NULL;
 

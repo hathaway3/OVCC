@@ -750,7 +750,9 @@ int FileID(char *Filename)
 	char elf[5] = { 0x7f, 'E', 'L', 'F', 0 };
 	char pe[4] = { 'M', 'Z', 0220, 0 };
 	char mach[5] = { 0xcf, 0xfa, 0xed, 0xfe, 0 };
+	char machfat[5] = { 0xca, 0xfe, 0xba, 0xbe, 0 };	// universal/fat Mach-O
 	char *match = NULL;
+	char *matchFat = NULL;
 	char Temp[5]="";
 	char *Platform = SDL_GetPlatform();
 
@@ -765,6 +767,7 @@ int FileID(char *Filename)
 	else if (strcmp(Platform, "Mac OS X") == 0)
 	{
 		match = mach;
+		matchFat = machfat;
 	}
 
 	if (match == NULL)
@@ -792,7 +795,16 @@ int FileID(char *Filename)
 		return(1);	//DLL File
 	}
 
-	return(2);		//Rom Image 
+	// A universal/fat Mach-O binary (e.g. a future arm64+x86_64 pak, per
+	// BACKLOG.md P1 1.1) doesn't start with the thin Mach-O magic above --
+	// without this it would be misidentified as a ROM image and loaded as
+	// raw cart data instead of dlopen()'d.
+	if (matchFat != NULL && strcmp(Temp, matchFat) == 0)
+	{
+		return(1);	//DLL File (universal binary)
+	}
+
+	return(2);		//Rom Image
 }
 
 void SetCartSlot0(unsigned char Tmp)

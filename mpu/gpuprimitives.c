@@ -21,9 +21,17 @@ void NewScreen(unsigned short idref, unsigned short address, unsigned short widt
 {
     // fprintf(stderr, "NewScreen %x %d %d %d\n", address, width, height, bitsperpixel);
 
-    if (bitsperpixel == 0) { WriteCoCoInt(idref, 0xFFFF); return ; };
+    // PixelsPerByte = 8/bitsperpixel below assumes bitsperpixel evenly
+    // divides 8; anything else (e.g. 3, or >8) corrupts the pitch/shift math
+    // used by every subsequent SetScreenPixel call for this screen.
+    if (bitsperpixel != 1 && bitsperpixel != 2 && bitsperpixel != 4 && bitsperpixel != 8)
+    {
+        WriteCoCoInt(idref, 0xFFFF);
+        return;
+    }
 
     Screen *NewScreen = malloc(sizeof(Screen));
+    if (NewScreen == NULL) { WriteCoCoInt(idref, 0xFFFF); return; }
 
     NewScreen->id = ++currentID;
     NewScreen->nextScreen = NULL;
@@ -125,7 +133,10 @@ void SetScreenPixel(Screen *screen, unsigned short x, unsigned short y)
 
     // fprintf(stderr, "SetPixel %d %d\n", x, y);
     unsigned short pixaddr = screen->ScreenAddress + (y * screen->ScreenPitch) + (x>>screen->PPBshift);
-    if (pixaddr < screen->ScreenAddress || pixaddr > screen->ScreenEnd) 
+    // ScreenEnd = ScreenAddress + pitch*height is one past the last valid
+    // byte (exclusive), so pixaddr == ScreenEnd was a one-byte overwrite
+    // past the screen into whatever CoCo memory follows it.
+    if (pixaddr < screen->ScreenAddress || pixaddr >= screen->ScreenEnd)
     {
         // write(0, "?", 1);
         return;
