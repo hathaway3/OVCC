@@ -55,7 +55,6 @@ static void (*DynamicMenuCallback)( char *,int, int)=NULL;
 static unsigned char (*MemRead8)(unsigned short);
 static void (*MemWrite8)(unsigned char,unsigned short);
 static unsigned char *Memory=NULL;
-unsigned char PhysicalDriveA=0,PhysicalDriveB=0,OldPhysicalDriveA=0,OldPhysicalDriveB=0;
 static unsigned char *RomPointer[3]={ExternalRom,DiskRom,RGBDiskRom};
 static unsigned char SelectRom=0;
 unsigned char SetChip(unsigned char);
@@ -78,7 +77,6 @@ long CreateDiskHeader(char *,unsigned char,unsigned char,unsigned char);
 void Load_Disk(unsigned char);
 void BuildMenu(void);
 
-static unsigned long RealDisks=0;
 long CreateDisk (unsigned char);
 static char TempFileName[MAX_PATH]="";
 unsigned char LoadExtRom( unsigned char,char *);
@@ -267,49 +265,12 @@ void OKCallback(AG_Event *event)
 {
 	SetTurboDisk(TurboMode);
 
-	if (!RealDisks)
-	{
-		PhysicalDriveA = 0;
-		PhysicalDriveB = 0;
-	}
-	else
-	{
-		if (PhysicalDriveA != OldPhysicalDriveA)	//Drive changed
-		{					
-			if (OldPhysicalDriveA != 0)
-				unmount_disk_image(OldPhysicalDriveA - 1);
-			if (PhysicalDriveA != 0)
-				mount_disk_image("*Floppy A:",PhysicalDriveA - 1);
-		}
-		if (PhysicalDriveB != OldPhysicalDriveB)	//Drive changed
-		{					
-			if (OldPhysicalDriveB != 0)
-				unmount_disk_image(OldPhysicalDriveB - 1);
-			if (PhysicalDriveB != 0)
-				mount_disk_image("*Floppy B:",PhysicalDriveB - 1);
-		}	
-	}
-
 	SelectRom = TempSelectRom;
 	strcpy(RomFileName, TempRomFileName);
 	CheckPath(RomFileName);
 	LoadExtRom(External, RomFileName);
   SaveConfig();
   AG_CloseFocusedWindow();
-}
-
-void PhysDriveASelected(AG_Event *event)
-{
-  AG_TlistItem *ti = AG_PTR(1);
-
-  PhysicalDriveA = ti->u;
-}
-
-void PhysDriveBSelected(AG_Event *event)
-{
-    AG_TlistItem *ti = AG_PTR(1);
-
-    PhysicalDriveB = ti->u;	
 }
 
 void UpdateROM(AG_Event *event)
@@ -334,26 +295,6 @@ void BrowseROM(AG_Event *event)
     AG_WindowShow(fdw);
 }
 
-void PopulateDriveDevices(AG_Event *event)
-{
-    AG_Combo *com = AG_COMBO_SELF(); 
-
-	AG_ComboSizeHint(com, "Drive 0", 5);
-    AG_TlistItem *item = AG_TlistAddS(com->list, NULL, "None");
-	item->u = 0;
-    AG_TlistAddS(com->list, NULL, "Drive 0");
-	item->u = 1;
-    AG_TlistAddS(com->list, NULL, "Drive 1");
-	item->u = 2;
-    AG_TlistAddS(com->list, NULL, "Drive 2");
-	item->u = 3;
-    AG_TlistAddS(com->list, NULL, "Drive 3");
-	item->u = 4;
-
-	item = AG_TlistFindByIndex(com->list, PhysicalDriveA);
-	if (item != NULL) AG_ComboSelect(com, item);
-}
-
 void ConfigFD502(AG_Event *event)
 {
 	AG_Window *win;
@@ -363,7 +304,7 @@ void ConfigFD502(AG_Event *event)
         return;
     }
 
-    AG_WindowSetGeometryAligned(win, AG_WINDOW_ALIGNMENT_NONE, 454, 344);
+    AG_WindowSetGeometryAligned(win, AG_WINDOW_ALIGNMENT_NONE, 454, 240);
     AG_WindowSetCaptionS(win, "FD-502 Config");
     AG_WindowSetCloseAction(win, AG_WINDOW_DETACH);
 
@@ -404,31 +345,6 @@ void ConfigFD502(AG_Event *event)
 
 	AG_ButtonNewFn(vbox, 0, "OK", OKCallback, NULL);
 	AG_ButtonNewFn(vbox, 0, "Cancel", AGWINDETACH(win));
-
-	// Physical Disks
-
-	AG_Combo *com;
-	AG_TlistItem *item;
-
-	hbox = AG_BoxNewHoriz(win, AG_BOX_HFILL | AG_BOX_FRAME);
-	vbox = AG_BoxNewVert(hbox, 0);
-
-	AG_LabelNew(vbox, 0, "Physical Disks");
-
-	com = AG_ComboNewS(vbox, AG_COMBO_HFILL, "A:");
-	AG_SetEvent(com, "combo-expanded", PopulateDriveDevices, NULL);
-	AG_SetEvent(com, "combo-selected", PhysDriveASelected, NULL);
-	if (RealDisks) AG_WidgetEnable(com); else AG_WidgetDisable(com);
-
-	com = AG_ComboNewS(vbox, AG_COMBO_HFILL, "B:");
-	AG_SetEvent(com, "combo-expanded", PopulateDriveDevices, NULL);
-	AG_SetEvent(com, "combo-selected", PhysDriveBSelected, NULL);
-	if (RealDisks) AG_WidgetEnable(com); else AG_WidgetDisable(com);
-
-	vbox = AG_BoxNewVert(hbox, 0);
-
-	AG_LabelNew(vbox, 0, "Windows 2000 or higher and FDRAWREAD");
-	AG_LabelNew(vbox, 0, "driver are required for Physical Disk access");
 
 	// External Disk ROM Image
 
@@ -762,13 +678,6 @@ void LoadConfig(void)
 			{
 				RetVal=mount_disk_image(DiskName,Index);
 				//MessageBox(0, "Disk load attempt", "OK", 0);
-				if (RetVal)
-				{
-					if ( (!strcmp(DiskName,"*Floppy A:")) )	//RealDisks
-						PhysicalDriveA=Index+1;
-					if ( (!strcmp(DiskName,"*Floppy B:")) )
-						PhysicalDriveB=Index+1;
-				}
 
 				UpdateMenu(Index);
 			}

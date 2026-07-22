@@ -211,7 +211,7 @@ void ADDCALL AssertInterupt(ASSERTINTERUPT Dummy)
 void ADDCALL PackPortWrite(unsigned char Port,unsigned char Data)
 {
 	if (Port == 0x7F) //Addressing the Multi-Pak
-	{ 
+	{
 		SpareSelectSlot= (Data & 3);
 		ChipSelectSlot= ( (Data & 0x30)>>4);
 		SlotRegister=Data;
@@ -223,31 +223,29 @@ void ADDCALL PackPortWrite(unsigned char Port,unsigned char Data)
 		}
 		return;
 	}
-	for(unsigned char Temp=0;Temp<4;Temp++)
-		if (PakPortWriteCalls[Temp] != NULL)
-			PakPortWriteCalls[Temp](Port,Data);
+	// Dispatch by SpareSelectSlot only, matching real MPI hardware: the I/O
+	// (SCS) select is independent from the cart/ROM (CTS) select, and only
+	// the slot switched into SCS sees port I/O. This used to broadcast to
+	// all four slots and return whichever's response was non-zero, which
+	// let a write with side effects fire on unselected paks and made a
+	// legitimately-zero response from the selected pak indistinguishable
+	// from "no pak answered."
+	if (PakPortWriteCalls[SpareSelectSlot] != NULL)
+		PakPortWriteCalls[SpareSelectSlot](Port,Data);
 	return;
 }
 
 unsigned char ADDCALL PackPortRead(unsigned char Port)
 {
 	if (Port == 0x7F)
-	{	
+	{
 		SlotRegister&=0xCC;
 		SlotRegister|=(SpareSelectSlot | (ChipSelectSlot<<4));
 		return(SlotRegister);
 	}
 
-	Temp2=0;
-	for (int modidx=0;modidx<4;modidx++)
-	{
-		if ( PakPortReadCalls[modidx] !=NULL)
-		{
-			Temp2=PakPortReadCalls[modidx](Port); //Find a Module that return a value 
-			if (Temp2!= 0)
-				return(Temp2);
-		}
-	}
+	if (PakPortReadCalls[SpareSelectSlot] != NULL)
+		return(PakPortReadCalls[SpareSelectSlot](Port));
 	return(0);
 }
 

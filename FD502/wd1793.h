@@ -22,23 +22,19 @@ This file is part of VCC (Virtual Color Computer).
 #include "defines.h"
 
 unsigned char disk_io_read(unsigned char port);
-void disk_io_write(unsigned char data,unsigned char port);	
+void disk_io_write(unsigned char data,unsigned char port);
 int mount_disk_image(char *,unsigned char );
 void unmount_disk_image(unsigned char drive);
 void DiskStatus(char *);
 void PingFdc(void);
 unsigned char SetTurboDisk( unsigned char);
-unsigned char UseKeyboardLeds(unsigned char);
-DWORD GetDriverVersion ();
-unsigned short InitController (void);
-//unsigned long UseRawDisk(unsigned char,unsigned char);
 // Commands for the wd1793 disk controller $FF48
 
-struct DiskInfo 
+struct DiskInfo
 {
 	FILE *FileHandle;
 	char ImageName[MAX_PATH];
-	long FileSize;				
+	long FileSize;
 	unsigned char HeaderSize;
 	unsigned char Sides;		// Number of Sides 1 ot 2
 	unsigned char Sectors;		//Sectors Per Track
@@ -48,7 +44,6 @@ struct DiskInfo
 	unsigned short TrackSize;
 	unsigned char WriteProtect;
 	unsigned char HeadPosition;	// The "Physical" Track the head is over
-	unsigned char RawDrive;
 	char ImageTypeName[4];
 };
 
@@ -73,7 +68,6 @@ typedef struct SectorInfo SectorInfo;
 #define VDK	1
 #define DMK	2
 #define OS9	3
-#define RAW 4
 
 
 //Control register masks
@@ -120,34 +114,5 @@ typedef struct SectorInfo SectorInfo;
 #define WRITETRACK		15
 
 #define HEADERBUFFERSIZE	256
-
-
-#define IOCTL_KEYBOARD_SET_INDICATORS        CTL_CODE(FILE_DEVICE_KEYBOARD, 0x0002, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_KEYBOARD_QUERY_TYPEMATIC       CTL_CODE(FILE_DEVICE_KEYBOARD, 0x0008, METHOD_BUFFERED, FILE_ANY_ACCESS)
-#define IOCTL_KEYBOARD_QUERY_INDICATORS      CTL_CODE(FILE_DEVICE_KEYBOARD, 0x0010, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
-typedef struct _KEYBOARD_INDICATOR_PARAMETERS {
-    USHORT UnitId;		// Unit identifier.
-    USHORT LedFlags;		// LED indicator state.
-
-} KEYBOARD_INDICATOR_PARAMETERS, *PKEYBOARD_INDICATOR_PARAMETERS;
-
-#define KEYBOARD_CAPS_LOCK_ON     4
-#define KEYBOARD_NUM_LOCK_ON      2
-#define KEYBOARD_SCROLL_LOCK_ON   1
-
-
-//
-#define DISK_SIDES          1       // sides per disk
-#define DISK_TRACKS         35      // tracks per side
-#define DISK_SECTORS        18      // sectors per track
-#define DISK_DATARATE       2       // 2 is double-density
-#define SECTOR_SIZE_CODE    1       // 0=128, 1=256, 2=512, 3=1024, ...
-#define SECTOR_GAP3         16    // gap3 size between sectors
-#define SECTOR_FILL         0xFF    // fill byte for formatted sectors
-#define SECTOR_BASE         1       // first sector number on track
-#define TRACK_SKEW          1       // format skew to the same sector on the next track
-
-#define TRACK_SIZE          ((128<<SECTOR_SIZE_CODE)*DISK_SECTORS)
 
 #endif
