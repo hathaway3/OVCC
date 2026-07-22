@@ -808,17 +808,15 @@ unsigned char LoadExtRom( unsigned char RomType,char *FilePath)	//Returns 1 on i
 {
 
 	FILE *rom_handle=NULL;
-	unsigned short index=0;
 	unsigned char RetVal=0;
 	unsigned char *ThisRom[3]={ExternalRom,DiskRom,RGBDiskRom};
-	
+
 	rom_handle=fopen(FilePath,"rb");
 	if (rom_handle==NULL)
 		memset(ThisRom[RomType],0xFF,EXTROMSIZE);
 	else
 	{
-		while ((feof(rom_handle)==0) & (index<EXTROMSIZE))
-			ThisRom[RomType][index++]=fgetc(rom_handle);
+		fread(ThisRom[RomType], 1, EXTROMSIZE, rom_handle);
 		RetVal=1;
 		fclose(rom_handle);
 	}

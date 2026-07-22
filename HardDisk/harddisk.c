@@ -360,7 +360,6 @@ static unsigned char LoadExtRom( char *FilePath)	//Returns 1 on if loaded
 {
 
 	FILE *rom_handle = NULL;
-	unsigned short index=0;
 	unsigned char RetVal=0;
 
 	//fprintf(stderr, "Hard Disk : LoadExtRom : %s\n", FilePath);
@@ -373,11 +372,8 @@ static unsigned char LoadExtRom( char *FilePath)	//Returns 1 on if loaded
 	}
 	else
 	{
-		while ((feof(rom_handle)==0) & (index<EXTROMSIZE))
-		{
-			DiskRom[index++]=fgetc(rom_handle);
-		}
-		
+		fread(DiskRom, 1, EXTROMSIZE, rom_handle);
+
 		RetVal = 1;
 		fclose(rom_handle);
 	}

@@ -797,7 +797,6 @@ unsigned char LoadExtRom(char *FilePath)	//Returns 1 on if loaded
 {
 
 	FILE *rom_handle = NULL;
-	unsigned short index = 0;
 	unsigned char RetVal = 0;
 
 	rom_handle = fopen(FilePath, "rb");
@@ -805,8 +804,7 @@ unsigned char LoadExtRom(char *FilePath)	//Returns 1 on if loaded
 		memset(HDBRom, 0xFF, EXTROMSIZE);
 	else
 	{
-		while ((feof(rom_handle) == 0) & (index<EXTROMSIZE))
-			HDBRom[index++] = fgetc(rom_handle);
+		fread(HDBRom, 1, EXTROMSIZE, rom_handle);
 		RetVal = 1;
 		fclose(rom_handle);
 	}

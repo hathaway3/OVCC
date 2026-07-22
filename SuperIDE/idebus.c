@@ -327,11 +327,11 @@ void ExecuteCommand(void)
 			Registers.Error[DiskSelect]=0;
 			CurrentCommand=0;
 			break;
-		case 0x10:	//All Recalibrate
-		case 0x11:
-		case 0x12:
-		case 0x13:
-		case 0x14:
+		case 0x10:	//Recalibrate (0x11-0x1F are the old MFM/RLL vendor-
+		case 0x11:	//specific stepping-rate variants of the same command).
+		case 0x12:	//There's no physical seek to perform on a virtual disk,
+		case 0x13:	//so just report success immediately, matching how real
+		case 0x14:	//IDE drives already handle this instantly.
 		case 0x15:
 		case 0x16:
 		case 0x17:
@@ -343,6 +343,9 @@ void ExecuteCommand(void)
 		case 0x1D:
 		case 0x1E:
 		case 0x1F:
+			Registers.Status[DiskSelect]=RDY;
+			Registers.Error[DiskSelect]=0;
+			CurrentCommand=0;
 			break;
 
 		default:

@@ -17,6 +17,7 @@ This file is part of VCC (Virtual Color Computer).
 */
 
 #include <time.h>
+#include <stdbool.h>
 #include "stdio.h"
 #include "stdlib.h"
 #include "distortc.h"
@@ -55,17 +56,40 @@ Write to $FF51 read from $FF50
 static unsigned char time_register=0;
 static time_t rawtime;
 static struct timespec tspec;
-static struct tm *now;
+// localtime() returns a pointer into a static buffer shared process-wide;
+// other pak modules with their own clocks (e.g. HardDisk/SuperIDE's
+// cloud9.c) also call localtime(), so holding onto its pointer across
+// multiple read_time() calls (needed for the Stop bit below, which freezes
+// the displayed time) would risk another module's clock call clobbering it
+// in between. Copy the result into our own storage instead.
+static struct tm nowbuf;
+static struct tm *now = NULL;
 static unsigned char Hour12=0;
+// Control register F (0x0F) bit 1: stop the clock, freezing whatever time
+// was last read instead of advancing -- a real, unambiguous feature of the
+// documented bit table (unlike 0x0D/0x0E's IRQ/busy/timer-rate bits, which
+// aren't specified precisely enough here to implement without guessing at
+// real chip behavior).
+static bool ClockStopped=false;
 
 unsigned char read_time(unsigned short port)
 {
 	unsigned char ret_val=0;
 	if (port == 0x50)
 	{
-		clock_gettime(CLOCK_REALTIME, &tspec);
-		rawtime = tspec.tv_sec;
-		now = localtime(&rawtime);
+		if (!ClockStopped || now == NULL)
+		{
+			struct tm *tmp;
+			clock_gettime(CLOCK_REALTIME, &tspec);
+			rawtime = tspec.tv_sec;
+			tmp = localtime(&rawtime);
+			if (tmp != NULL)
+			{
+				nowbuf = *tmp;
+				now = &nowbuf;
+			}
+		}
+		if (now == NULL) return(0); // localtime() failed and never has before
 		switch (time_register)
 		{
 
@@ -110,13 +134,18 @@ unsigned char read_time(unsigned short port)
 		ret_val=(unsigned char)now->tm_wday; //May not be right
 		break;
 		case 0xD:
-
+		// bit1 = Busy. Reads here are always a fresh, instantaneous
+		// snapshot in this emulation (there's no real update-in-progress
+		// window like a physical RTC has), so this is never busy.
+		ret_val = 0;
 		break;
 		case 0xE:
 
 		break;
 		case 0xF:
-		//	Hour12
+		// bit2 = 24/12 format (Hour12, set via write_time); bit1 = Stop
+		// readback.
+		ret_val = (ClockStopped ? 2 : 0) | (Hour12 ? 0 : 4);
 		break;
 		default:
 			ret_val=0;
@@ -136,6 +165,7 @@ void write_time(unsigned char data,unsigned char port)
 			{
 				case 0x0F:
 					Hour12=!((data & 4)>>2);
+					ClockStopped = (data & 2) ? true : false;
 				//	if (Hour12==0)
 				//		MessageBox(0,"Setting format 0","Ok",0);
 				//	else
