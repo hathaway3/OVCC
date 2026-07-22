@@ -351,3 +351,65 @@ int ResolvePlatformPath(const char *filename, char *resolved, size_t max_len) {
     return (access(resolved, F_OK) == 0);
 }
 #endif
+
+// Rewrites an absolute path in place to be relative to one of the same
+// bundle-relative roots ResolvePlatformPath() searches (Application Support,
+// Contents/PlugIns, executable directory), so a saved Module/OnBoot path
+// keeps working after the .app bundle is moved or renamed. Paths outside all
+// of those roots (e.g. a module the user picked from elsewhere on disk) are
+// left untouched, since there's no bundle-relative form for them.
+#ifdef DARWIN
+void MakeModulePathPortable(char *Path)
+{
+    if (Path[0] != '/')
+        return; // Already relative; nothing to do.
+
+    char exec_path[1024];
+    uint32_t size = sizeof(exec_path);
+    if (_NSGetExecutablePath(exec_path, &size) != 0)
+        return;
+
+    char real_exec_path[1024];
+    if (realpath(exec_path, real_exec_path) == NULL) {
+        strncpy(real_exec_path, exec_path, sizeof(real_exec_path));
+    }
+
+    char temp_path[1024];
+    strncpy(temp_path, real_exec_path, sizeof(temp_path));
+    char *exec_dir = dirname(temp_path);
+    size_t exec_dir_len = strlen(exec_dir);
+
+    char bundle_plugins[1024] = "";
+    if (exec_dir_len > 15 && strcmp(exec_dir + exec_dir_len - 15, "/Contents/MacOS") == 0) {
+        char bundle_path[1024];
+        strncpy(bundle_path, exec_dir, exec_dir_len - 15);
+        bundle_path[exec_dir_len - 15] = '\0';
+        snprintf(bundle_plugins, sizeof(bundle_plugins), "%s/Contents/PlugIns", bundle_path);
+    }
+
+    char app_support[1024] = "";
+    char *home = getenv("HOME");
+    if (home) {
+        snprintf(app_support, sizeof(app_support), "%s/Library/Application Support/OVCC", home);
+    }
+
+    const char *roots[] = { app_support, bundle_plugins, exec_dir };
+    for (size_t i = 0; i < sizeof(roots) / sizeof(roots[0]); i++) {
+        size_t root_len = strlen(roots[i]);
+        if (root_len == 0)
+            continue;
+        if (strncmp(Path, roots[i], root_len) == 0 && Path[root_len] == '/') {
+            char remainder[MAX_PATH];
+            strncpy(remainder, Path + root_len + 1, sizeof(remainder));
+            strcpy(Path, remainder);
+            return;
+        }
+    }
+    // Not under any known bundle-relative root; leave it as an absolute path.
+}
+#else
+void MakeModulePathPortable(char *Path)
+{
+    (void)Path;
+}
+#endif

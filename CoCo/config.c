@@ -198,6 +198,7 @@ unsigned char WriteNamedIniFile(char *iniFilePath)
 	WritePrivateProfileInt("Misc","KeyMapIndex",CurrentConfig.KeyMap,iniFilePath);
 
 	ValidatePath(CurrentConfig.ModulePath);
+	MakeModulePathPortable(CurrentConfig.ModulePath);
 	WritePrivateProfileString("Module", "OnBoot", CurrentConfig.ModulePath, iniFilePath);
 
 	WritePrivateProfileInt("LeftJoyStick","UseMouse",LeftSDL.UseMouse,iniFilePath);

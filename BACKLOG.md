@@ -27,7 +27,7 @@ The bundle now uses the conventional layout: binary in `Contents/MacOS/`, dylibs
 
 ### 1.4 Launcher writes symlinks *inside* the bundle; config lives in the bundle — ✅ Done
 The launcher no longer symlinks anything into the bundle. ROMs, media, and `Vcc.ini` are located at runtime by `ResolvePlatformPath()` (`CoCo/fileops.c`), which searches `~/Library/Application Support/OVCC/` → `Contents/PlugIns/` → the folder containing `ovcc.app` → the executable dir. `coco3.rom` (`tcc1014mmu_mm.c` / `_nomm.c`), `disk11.rom` (`FD502/fd502.c`), disk images (via `CheckPath`), and the ini (`config.c`) all go through it. Paths derive from `_NSGetExecutablePath`, so it is Gatekeeper-translocation-safe, and the bundle is fully relocatable into `/Applications`.
-- **Follow-up (open, minor):** `Module/OnBoot` stores an *absolute* plugin path, so moving the app leaves a stale auto-load path (re-loading the cart fixes it). Could store the bundle-relative name and resolve via the same search (`ResolvePlatformPath` already checks `Contents/PlugIns/`).
+- ✅ **Follow-up done — `Module/OnBoot` now stores a bundle-relative path.** Added `MakeModulePathPortable()` (`CoCo/fileops.c`, Darwin-only; no-op stub elsewhere), called from `WriteNamedIniFile` right before the `Module`/`OnBoot` ini write. It strips the `~/Library/Application Support/OVCC/`, `Contents/PlugIns/`, or executable-dir prefix from an absolute module path, leaving just the relative filename; a path outside all three roots (a module picked from elsewhere on disk) is left absolute since there's no bundle-relative form for it. On load, `CheckPath()`/`ResolvePlatformPath()` (already called on `CurrentConfig.ModulePath` in `ReadNamedIniFile`) resolves that relative name against the *current* bundle location, so the auto-load path survives the bundle being moved or renamed.
 
 ### 1.5 `DYLD_LIBRARY_PATH` launch mechanism — ✅ Done
 The launcher (`Makefiles/Darwin/ovcc-launch`, installed as `CFBundleExecutable`) no longer sets `DYLD_*`; it just `exec`s the binary. All dylib/pak loads resolve via `@executable_path`/`@loader_path`/`@rpath` install names set by `dylibbundler`, so a hardened-runtime signature won't break loading.
@@ -49,20 +49,20 @@ The script now builds libagar into a **project-local prefix** (`libagar-install/
 - Build Intel (`macos-13`) and arm64 (`macos-latest`) → universal or dual-download release (ties into §1.1).
 - **Feature:** a non-release CI job that builds on every push/PR so breakage is caught before tagging.
 
-### 2.4 Misc build cleanup — 🟡 Partial
+### 2.4 Misc build cleanup — ✅ Done
 - ✅ `ovcc.app/.DS_Store` untracked and removed from git.
 - ✅ Warnings: Darwin now builds with `-Wall` (`Makefile.common`); other platforms keep `-w`.
-- ❌ `Makefile:26` still runs `touch ovcc.app` to refresh the Finder icon cache — harmless but undocumented; comment it or target `Contents/Info.plist`.
+- ✅ `Makefile`'s `install` target now documents its `touch ovcc.app` line with a comment explaining why it's there (bumps the bundle's own mtime so Finder/LaunchServices refreshes the cached icon/Info.plist metadata after a rebuild).
 
 ---
 
 ## P3 — Emulator behavior on macOS
 
-### 3.1 Keyboard: finish and de-duplicate the Darwin layout table — ❌ Open
+### 3.1 Keyboard: finish and de-duplicate the Darwin layout table — 🟡 Partial
 `CoCo/keyboardLayoutAGAR.c` `#ifdef DARWIN` block:
-- Duplicate/conflicting entries (`AG_KEY_BACKQUOTE`/`AG_KEY_TILDE`; brace entries in both common and Darwin tables). Audit first-match vs last-match and remove the losers.
-- Right-ALT handling is stubbed (`#if 0 // TODO: ALT?` in `CoCo/keyboardAGAR.c`); verify behavior on macOS where Option produces dead keys.
-- Non-US layouts assume US ANSI; ideally map by character (the unicode value is already available) rather than by keysym.
+- ✅ **Done — duplicate/dead entries removed.** `AG_KEY_LEFTBRACE`/`AG_KEY_PIPE`/`AG_KEY_RIGHTBRACE`/`AG_KEY_TILDE` were never real AGAR keysyms — they were locally-faked macros (`#define AG_KEY_TILDE 0x7e`, etc., guarded only by `#ifndef AG_KEY_LEFTBRACE`) set to the ASCII value of the *shifted* character. AGAR reports the same keysym for a physical key regardless of shift state (e.g. the backtick/tilde key always reports `AG_KEY_BACKQUOTE`), so entries keyed on the four fake macros could never match a real key event — dead code in all three layout tables. Removed the 4 dead rows from each of the 3 `#ifdef DARWIN` blocks and the now-unused fallback `#define`s; the common (non-Darwin-gated) table already correctly maps `{`/`}`/`|` via `AG_KEY_LEFTBRACKET`/`AG_KEY_RIGHTBRACKET`/`AG_KEY_BACKSLASH` + `AG_KEY_LSHIFT`, so no behavior changed, just removed unreachable entries.
+- ❌ Right-ALT handling is stubbed (`#if 0 // TODO: ALT?` in `CoCo/keyboardAGAR.c`); verify behavior on macOS where Option produces dead keys.
+- ❌ Non-US layouts assume US ANSI; ideally map by character (the unicode value is already available) rather than by keysym.
 
 ### 3.2 Caps Lock synthesizes an immediate down+up pair — ❌ Open
 `CoCo/vccgui.c` `#ifdef DARWIN` block fakes a keydown/keyup and then SHIFT for alpha keys while `capslocked`. Verify the state can't get stuck when the app loses focus with Caps Lock on (focus loss won't deliver the release toggle); consider querying real modifier state on focus-gain.
@@ -83,9 +83,10 @@ On Darwin, `GlobalExecFolder` is derived from `_NSGetExecutablePath` into static
 ### 4.1 Broken link in README.md — ✅ Done
 `README.md` now links the macOS guide with a relative path: `[macOS Build and Run Guide](README_MAC.md)`.
 
-### 4.2 README_MAC.md drift — 🟡 Partial
+### 4.2 README_MAC.md drift — ✅ Done
 - ✅ §3 now documents the runtime ROM/media search order and the relocatable `/Applications` install with ROMs in `~/Library/Application Support/OVCC/`.
-- ❌ Still to do: clarify the `-I$(BREW_PREFIX)/include` flag wording; document the quarantine `xattr` workaround by the Gatekeeper section (until §1.2 lands); note that `make install` must run after a full `make`.
+- ✅ §6/§7 document the quarantine `xattr -dr com.apple.quarantine ovcc.app` workaround by the Gatekeeper section, and §5.3 notes `make install` must run after a full `make`.
+- ✅ §7's `-I$(BREW_PREFIX)/include` wording now spells out that `BREW_PREFIX` is a Make variable computed automatically from `brew --prefix` in `Makefile.common` — not an environment variable the user needs to set.
 
 ### 4.3 Packaging convenience (feature) — ❌ Open
 Once §1.1–§1.3 land (they have): ship a DMG with a drag-to-Applications layout instead of a zip, and/or a Homebrew cask. The release workflow already computes the version string for naming.

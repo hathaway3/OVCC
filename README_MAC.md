@@ -228,8 +228,7 @@ The Makefiles search for Homebrew headers and libraries.
 * On Apple Silicon Macs, Homebrew installs to `/opt/homebrew`.
 * On Intel Macs, Homebrew installs to `/usr/local`.
 
-The compilation flags automatically query the correct prefix via `brew --prefix`:
-`-I$(BREW_PREFIX)/include` and `-L$(BREW_PREFIX)/lib` (via `Makefile.common`). If you are using custom directory structures, ensure your `pkg-config` environment points to the correct Homebrew paths:
+`Makefile.common` defines a Make variable, `BREW_PREFIX`, by running `brew --prefix` at build time (falling back to `/usr/local` if Homebrew isn't found) and adds `-I$(BREW_PREFIX)/include` and `-L$(BREW_PREFIX)/lib` to the compile/link flags. This is automatic — you don't need to set or export a `BREW_PREFIX` environment variable yourself. If you are using custom directory structures, ensure your `pkg-config` environment points to the correct Homebrew paths instead:
 ```bash
 export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:$PKG_CONFIG_PATH"
 ```

@@ -76,14 +76,6 @@
 #include <agar/core.h>
 #include <agar/gui.h>
 
-/* AGAR doesn't define these for some reason */
-#ifndef AG_KEY_LEFTBRACE
-# define AG_KEY_LEFTBRACE      0x7b
-# define AG_KEY_PIPE           0x7c
-# define AG_KEY_RIGHTBRACE     0x7d
-# define AG_KEY_TILDE          0x7e
-#endif
-
 /*****************************************************************************/
 /**
 	Original VCC key translation table for DECB
@@ -223,10 +215,6 @@ keytranslationentry_t keyTranslationsCoCoAGAR[] =
 	{ AG_KEY_CARET,      AG_KEY_LSHIFT, 16,     7,    64,    4 }, //   ^ (CoCo CTRL 7)
 	{ AG_KEY_UNDERSCORE, AG_KEY_LSHIFT, 32,     5,    64,    4 }, //   _ (underscore) (CoCo CTRL -)
 	{ AG_KEY_BACKQUOTE,  AG_KEY_LSHIFT, 16,     3,    64,    4 }, //   ~ (tilde) (CoCo CTRL 3)
-	{ AG_KEY_LEFTBRACE,  AG_KEY_LSHIFT, 64,     4,    32,    4 }, //   { (CoCo CTRL ,)
-	{ AG_KEY_PIPE,       AG_KEY_LSHIFT, 16,     1,    64,    4 }, //   | (Pipe) (CoCo CTRL 1)
-	{ AG_KEY_RIGHTBRACE, AG_KEY_LSHIFT, 64,     4,    32,    6 }, //   } (CoCo CTRL .)
-	{ AG_KEY_TILDE,      AG_KEY_LSHIFT, 16,     3,    64,    4 }, //   ~ (tilde) (CoCo CTRL 3)
 	// end of addition
 #endif
 
@@ -331,10 +319,6 @@ keytranslationentry_t keyTranslationsNaturalAGAR[] =
 	{ AG_KEY_CARET,      AG_KEY_LSHIFT, 16,     7,    64,    4 }, //   ^ (CoCo CTRL 7)
 	{ AG_KEY_UNDERSCORE, AG_KEY_LSHIFT, 32,     5,    64,    4 }, //   _ (underscore) (CoCo CTRL -)
 	{ AG_KEY_BACKQUOTE,  AG_KEY_LSHIFT, 16,     3,    64,    4 }, //   ~ (tilde) (CoCo CTRL 3)
-	{ AG_KEY_LEFTBRACE,  AG_KEY_LSHIFT, 64,     4,    32,    4 }, //   { (CoCo CTRL ,)
-	{ AG_KEY_PIPE,       AG_KEY_LSHIFT, 16,     1,    64,    4 }, //   | (Pipe) (CoCo CTRL 1)
-	{ AG_KEY_RIGHTBRACE, AG_KEY_LSHIFT, 64,     4,    32,    6 }, //   } (CoCo CTRL .)
-	{ AG_KEY_TILDE,      AG_KEY_LSHIFT, 16,     3,    64,    4 }, //   ~ (tilde) (CoCo CTRL 3)
 	// end of addition
 #endif
 
@@ -497,10 +481,6 @@ keytranslationentry_t keyTranslationsCompactAGAR[] =
 	{ AG_KEY_CARET,      AG_KEY_LSHIFT, 16,     7,    64,    4 }, //   ^ (CoCo CTRL 7)
 	{ AG_KEY_UNDERSCORE, AG_KEY_LSHIFT, 32,     5,    64,    4 }, //   _ (underscore) (CoCo CTRL -)
 	{ AG_KEY_BACKQUOTE,  AG_KEY_LSHIFT, 16,     3,    64,    4 }, //   ~ (tilde) (CoCo CTRL 3)
-	{ AG_KEY_LEFTBRACE,  AG_KEY_LSHIFT, 64,     4,    32,    4 }, //   { (CoCo CTRL ,)
-	{ AG_KEY_PIPE,       AG_KEY_LSHIFT, 16,     1,    64,    4 }, //   | (Pipe) (CoCo CTRL 1)
-	{ AG_KEY_RIGHTBRACE, AG_KEY_LSHIFT, 64,     4,    32,    6 }, //   } (CoCo CTRL .)
-	{ AG_KEY_TILDE,      AG_KEY_LSHIFT, 16,     3,    64,    4 }, //   ~ (tilde) (CoCo CTRL 3)
 	// end of addition
 #endif
 

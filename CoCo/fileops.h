@@ -32,6 +32,7 @@ char* PathFindExtension(char *);
 char GetPathDelim();
 char *GetPathDelimStr();
 int ResolvePlatformPath(const char *filename, char *resolved, size_t max_len);
+void MakeModulePathPortable(char *Path);
 
 #ifdef __cplusplus
 	}
