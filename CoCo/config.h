@@ -22,6 +22,7 @@ This file is part of VCC (Virtual Color Computer).
 #include "iniman.h"
 
 void LoadConfig(SystemState2 *);
+int IsFirstRun(void);
 unsigned char WriteIniFile(void);
 unsigned char ReadIniFile(void);
 char * BasicRomName(void);

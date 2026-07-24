@@ -18,6 +18,7 @@ This file is part of VCC (Virtual Color Computer).
 
 //#include <dlfcn.h>
 #include <stdio.h>
+#include <dirent.h>
 #include "defines.h"
 #include "tcc1014mmu.h"
 #include "pakinterface.h"
@@ -540,7 +541,85 @@ int FileID(char *Filename)
 		return(1);	//DLL File
 	}
 
-	return(2);		//Rom Image 
+	return(2);		//Rom Image
+}
+
+int EnumeratePaks(PakInfo *outList, int maxCount)
+{
+	extern int GetPakSearchDir(char *, size_t);
+
+	char searchDir[MAX_PATH] = "";
+	DIR *dir;
+	struct dirent *entry;
+	int count = 0;
+	char *platform = SDL_GetPlatform();
+
+	if (!GetPakSearchDir(searchDir, sizeof(searchDir)))
+		return 0;
+
+	dir = opendir(searchDir);
+	if (dir == NULL)
+		return 0;
+
+	while (count < maxCount && (entry = readdir(dir)) != NULL)
+	{
+		char fname[MAX_PATH] = "";
+		char fullPath[MAX_PATH] = "";
+		size_t nameLen;
+		void *probe;
+		GETNAME getName;
+		char probedName[64] = "";
+
+		strncpy(fname, entry->d_name, sizeof(fname) - 1);
+		nameLen = strlen(fname);
+
+		if (strcmp(platform, "Windows") == 0)
+		{
+			if (nameLen < 4 || strcmp(fname + nameLen - 4, ".dll") != 0)
+				continue;
+		}
+		else
+		{
+			// Linux and macOS pak builds are both named lib*.so -- the Darwin
+			// module makefiles build .so, not .dylib (see e.g.
+			// mpi/Makefiles/Darwin/makefile TARGET=libmpi.so).
+			if (nameLen < 3 || strcmp(fname + nameLen - 3, ".so") != 0)
+				continue;
+			if (strncmp(fname, "lib", 3) != 0)
+				continue;
+		}
+
+		snprintf(fullPath, sizeof(fullPath), "%s%c%s", searchDir, GetPathDelim(), fname);
+
+		if (FileID(fullPath) != 1) // Not a recognized shared-lib binary for this platform
+			continue;
+
+		probe = SDL_LoadObject(fullPath);
+		if (probe == NULL)
+			continue;
+
+		getName = (GETNAME)SDL_LoadFunction(probe, "ModuleName");
+		if (getName == NULL)
+		{
+			SDL_UnloadObject(probe);
+			continue; // Not a valid OVCC pak module
+		}
+
+		// A NULL menu anchor is the documented "name only" probe (see
+		// testlib.c) -- it skips each module's BuildMenu() side effects.
+		getName(probedName, NULL);
+		SDL_UnloadObject(probe);
+
+		if (probedName[0] == '\0')
+			continue;
+
+		strncpy(outList[count].Name, probedName, sizeof(outList[count].Name) - 1);
+		strncpy(outList[count].Path, fullPath, sizeof(outList[count].Path) - 1);
+		count++;
+	}
+
+	closedir(dir);
+	return count;
 }
 
 void UpdateCartridgeMenu(char *modname)

@@ -36,6 +36,17 @@ void UnloadDll(short int);
 void UnloadPack(void);
 void DynamicMenuActivated(unsigned char );
 void RefreshDynamicMenu(void);
+
+// Read-only pak discovery for the Startup Wizard (wizard.c): scans the
+// platform pak directory (see fileops.c GetPakSearchDir) and probes each
+// candidate shared library for its ModuleName, without mounting it into any
+// slot. Returns the number of paks found (capped at maxCount).
+typedef struct {
+    char Name[64];
+    char Path[MAX_PATH];
+} PakInfo;
+
+int EnumeratePaks(PakInfo *outList, int maxCount);
 #define ID_SDYNAMENU 5000	//Defines the start and end IDs for the dynamic menus
 #define ID_EDYNAMENU 5100
 #define NOMODULE	1

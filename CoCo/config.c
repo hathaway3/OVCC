@@ -134,6 +134,30 @@ void buildTransScan2DispTable()
 
 /*****************************************************************************/
 
+// Builds IniFilePath (and refreshes ExecDirectory) the same way on every
+// platform. Shared by LoadConfig() and IsFirstRun() so the fresh-install
+// check and the real load always agree on where Vcc.ini lives.
+static void BuildIniFilePath(void)
+{
+	strcpy(ExecDirectory, GlobalExecFolder);
+#ifdef DARWIN
+	ResolvePlatformPath(IniFileName, IniFilePath, sizeof(IniFilePath));
+#else
+	strcpy(IniFilePath, ExecDirectory);
+	strcat(IniFilePath, GetPathDelimStr());
+	strcat(IniFilePath, IniFileName);
+#endif
+}
+
+// True exactly once: the very first time OVCC runs on a machine, before
+// Vcc.ini has ever been written. Used by vcc.c to decide whether to show the
+// Startup Wizard (wizard.c) instead of booting straight from defaults.
+int IsFirstRun(void)
+{
+	BuildIniFilePath();
+	return !AG_FileExists(IniFilePath);
+}
+
 void LoadConfig(SystemState2 *LCState)
 {
 	extern const char *GlobalShortName;
@@ -145,13 +169,7 @@ void LoadConfig(SystemState2 *LCState)
 	strcpy(CurrentConfig.PathtoExe,ExecDirectory);
 	strcat(CurrentConfig.PathtoExe,GetPathDelimStr());
 	strcat(CurrentConfig.PathtoExe,AppName);
-#ifdef DARWIN
-	ResolvePlatformPath(IniFileName, IniFilePath, sizeof(IniFilePath));
-#else
-	strcpy(IniFilePath,ExecDirectory);
-	strcat(IniFilePath,GetPathDelimStr());
-	strcat(IniFilePath,IniFileName);
-#endif
+	BuildIniFilePath();
 	LCState->ScanLines = 0;
 	NumberOfSoundCards = GetSoundCardListSDL(SoundCards);
 	ReadIniFile();

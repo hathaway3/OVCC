@@ -28,6 +28,8 @@ This file is part of VCC (Virtual Color Computer).
 #include <unistd.h>
 #include <libgen.h>
 #include <sys/stat.h>
+#elif !defined(__MINGW32__)
+#include <unistd.h>
 #endif
 
 static char ExecFolder[MAX_PATH];
@@ -411,5 +413,58 @@ void MakeModulePathPortable(char *Path)
 void MakeModulePathPortable(char *Path)
 {
     (void)Path;
+}
+#endif
+
+// Where the Startup Wizard (wizard.c) looks for pak module shared libraries to
+// offer as peripheral choices. Mirrors the directories each module's own
+// Makefile installs into (see Makefile.common's LIBDIR and the Darwin module
+// makefiles' "install" targets), not just an arbitrary guess.
+#ifdef DARWIN
+int GetPakSearchDir(char *out, size_t max_len)
+{
+    char exec_path[1024];
+    uint32_t size = sizeof(exec_path);
+    if (_NSGetExecutablePath(exec_path, &size) != 0) {
+        out[0] = '\0';
+        return 0;
+    }
+
+    char real_exec_path[1024];
+    if (realpath(exec_path, real_exec_path) == NULL) {
+        strncpy(real_exec_path, exec_path, sizeof(real_exec_path));
+    }
+
+    char temp_path[1024];
+    strncpy(temp_path, real_exec_path, sizeof(temp_path));
+    char *exec_dir = dirname(temp_path);
+    size_t exec_dir_len = strlen(exec_dir);
+
+    if (exec_dir_len > 15 && strcmp(exec_dir + exec_dir_len - 15, "/Contents/MacOS") == 0) {
+        char bundle_path[1024];
+        strncpy(bundle_path, exec_dir, exec_dir_len - 15);
+        bundle_path[exec_dir_len - 15] = '\0';
+        snprintf(out, max_len, "%s/Contents/PlugIns", bundle_path);
+    } else {
+        // Not running from a .app bundle (e.g. a dev build); fall back to
+        // wherever the executable itself lives.
+        strncpy(out, exec_dir, max_len);
+    }
+    return 1;
+}
+#else
+int GetPakSearchDir(char *out, size_t max_len)
+{
+    InitExecFolder();
+#ifndef __MINGW32__
+    // Linux: prefer the location `make install` actually populates
+    // (Makefile.common: LIBDIR = $(prefix)/lib/ovcc) over a dev-build guess.
+    if (access("/usr/local/lib/ovcc", F_OK) == 0) {
+        strncpy(out, "/usr/local/lib/ovcc", max_len);
+        return 1;
+    }
+#endif
+    snprintf(out, max_len, "%s%c%s", ExecFolder, GetPathDelim(), "libs");
+    return 1;
 }
 #endif

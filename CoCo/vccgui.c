@@ -27,6 +27,7 @@ This file is part of VCC (Virtual Color Computer).
 #include "keyboard.h"
 #include "joystickinputSDL.h"
 #include "throttle.h"
+#include "wizard.h"
 
 #include "xdebug.h"
 
@@ -1832,6 +1833,13 @@ void WindowDetached(AG_Event *event)
     //printf("WindowDetached\n");
 }
 
+void ShowStartupWizard(AG_Event *event)
+{
+    SystemState2 *state = AG_PTR(1);
+
+    RunStartupWizard(state, 0); // 0: menu-triggered -- hot-swaps the running config, doesn't reboot the thread.
+}
+
 void DecorateWindow(SystemState2 *EmuState2)
 {
     AG_Window *win = EmuState2->agwin;
@@ -1855,6 +1863,7 @@ void DecorateWindow(SystemState2 *EmuState2)
     AG_MenuItem *itemConf = AG_MenuNode(menu->root, "Configuration", NULL);
     {
         AG_MenuAction(itemConf, "Config", NULL, Configure, NULL);
+        AG_MenuAction(itemConf, "Setup Wizard...", NULL, ShowStartupWizard, "%p", EmuState2);
     }
 
     itemCartridge = AG_MenuNode(menu->root, "Cartridge", NULL);

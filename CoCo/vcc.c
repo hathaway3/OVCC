@@ -45,6 +45,7 @@ This file is part of VCC (Virtual Color Computer).
 #include "throttle.h"
 #include "logger.h"
 #include "AGARInterface.h"
+#include "wizard.h"
 
 SystemState2 EmuState2;
 static bool DialogOpen=false;
@@ -110,9 +111,49 @@ void AddDummyCartMenus(void);
 void RemoveDummyCartMenus(void);
 void PrepareEventCallBacks(SystemState2 *);
 void PadDummyCartMenus(void);
+void FinishBoot(SystemState2 *);
 
 /*--------------------------------------------------------------------------*/
 
+// The tail end of booting: mount the on-boot module's menu padding, arm the
+// initial reset, and spin up the emulation thread(s). Shared by the normal
+// boot path in main() and by the Startup Wizard's (wizard.c) "Finish"/"Skip"
+// callback on a first run, so both paths end up in the exact same state.
+void FinishBoot(SystemState2 *state)
+{
+	AG_Thread threadID;
+
+	PadDummyCartMenus();
+	state->ResetPending=2;
+	SetClockSpeed(1);	//Default clock speed .89 MHZ
+	BinaryRunning = true;
+	state->EmulationRunning=AutoStart;
+
+	if (strlen(QuickLoadFile) != 0)
+	{
+		Qflag=255;
+		state->EmulationRunning=1;
+	}
+
+	if (AG_ThreadTryCreate(&threadID, EmuLoop, NULL) != 0)
+	{
+		fprintf(stderr, "Can't Start main Emulation Thread!\n");
+		return;
+	}
+
+	state->emuThread = threadID;
+
+#ifdef ISOCPU
+	extern void *CPUloop(void *);
+	if (AG_ThreadTryCreate(&threadID, CPUloop, state) != 0)
+	{
+		fprintf(stderr, "Can't Start CPU Thread!\n");
+		return;
+	}
+#endif
+
+	state->cpuThread = threadID;
+}
 
 int main(int argc, char **argv)
 {
@@ -167,7 +208,6 @@ int main(int argc, char **argv)
 
 	char temp1[MAX_PATH]="";
 	char temp2[MAX_PATH]=" Running on ";
-	AG_Thread threadID;
 
 	// This Application Name
 	strcpy(name, argv[0]);
@@ -210,38 +250,18 @@ int main(int argc, char **argv)
 
 	ClsAGAR(0, &EmuState2);
 
-	LoadConfig(&EmuState2);			//Loads the default config file Vcc.ini from the exec directory
-	PadDummyCartMenus();
-	EmuState2.ResetPending=2;
-	SetClockSpeed(1);	//Default clock speed .89 MHZ	
-	BinaryRunning = true;
-	EmuState2.EmulationRunning=AutoStart;
-
-	if ((argc > 1 && strlen(argv[1]) != 0))
+	if (IsFirstRun())
 	{
-		Qflag=255;
-		EmuState2.EmulationRunning=1;
+		// No Vcc.ini yet: let the user pick their system before we boot.
+		// The wizard's own Finish/Skip handling calls LoadConfig()+FinishBoot()
+		// once it's done, so nothing further happens here until then.
+		RunStartupWizard(&EmuState2, 1);
 	}
-
-	if (AG_ThreadTryCreate(&threadID, EmuLoop, NULL) != 0)
+	else
 	{
-		fprintf(stderr, "Can't Start main Emulation Thread!\n");
-		return(0);
+		LoadConfig(&EmuState2);			//Loads the default config file Vcc.ini from the exec directory
+		FinishBoot(&EmuState2);
 	}
-
-	EmuState2.emuThread = threadID;
-
-#ifdef ISOCPU
-	extern void *CPUloop(void *);
-	if (AG_ThreadTryCreate(&threadID, CPUloop, &EmuState2) != 0)
-	{
-		fprintf(stderr, "Can't Start CPU Thread!\n");
-		return(0);
-	}
-#endif
-
-	EmuState2.cpuThread = threadID;
-
 
     AG_EventLoop();
 	

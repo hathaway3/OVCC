@@ -4,7 +4,7 @@ _OBJS = vcc.o coco3.o config.o fileops.o hd6309.o iobus.o logger.o mc6809.o \
 	mc6821.o pakinterface.o quickload.o tcc1014registers.o \
 	tcc1014mmu_nomm.o tcc1014mmu_mm.o tcc1014mmu_common.o \
 	throttle.o _xdebug.o cassette.o AGARInterface.o tcc1014graphicsAGAR.o keyboardAGAR.o \
-	keyboardLayoutAGAR.o joystickinputSDL.o audioSDL.o vccgui.o iniman.o
+	keyboardLayoutAGAR.o joystickinputSDL.o audioSDL.o vccgui.o iniman.o wizard.o
 
 include ../Makefile.common
 
@@ -70,6 +70,8 @@ $(ODIR)/tcc1014graphicsAGAR.o: tcc1014graphicsAGAR.c defines.h tcc1014graphicsAG
 	logger.h 
 
 $(ODIR)/iniman.o: iniman.c iniman.h
+
+$(ODIR)/wizard.o: wizard.c wizard.h defines.h vcc.h config.h pakinterface.h fileops.h iniman.h
 
 install:
 	install -D $(TARGET) $(EXEDIR)/$(TARGET)

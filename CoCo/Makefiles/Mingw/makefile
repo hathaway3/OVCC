@@ -35,7 +35,7 @@ LDFLAGS=$(LIBS) #-Wl,-export-all-symbols # -export-dynamic
 _OBJS=	vcc.o coco3.o config.o fileops.o hd6309.o iobus.o logger.o mc6809.o \
 	mc6821.o pakinterface.o quickload.o tcc1014mmu_nomm.o tcc1014registers.o \
 	throttle.o _xdebug.o cassette.o AGARInterface.o tcc1014graphicsAGAR.o keyboardAGAR.o \
-	keyboardLayoutAGAR.o joystickinputSDL.o audioSDL.o vccgui.o iniman.o tcc1014mmu_common.o
+	keyboardLayoutAGAR.o joystickinputSDL.o audioSDL.o vccgui.o iniman.o tcc1014mmu_common.o wizard.o
 	
 _UNUSED_OBJS = hd6309-a.o fixedtexture.o hd6309asmP0-00-7F.o hd6309asmP0-80-FF.o hd6309asmP1-00-FF.o hd6309asmP2-00-FF.o \
 	hd6309asmReg2Reg.o hd6309cea.o hd6309pshpul.o hd6309saveflags.o hd6309tfrexg.o hd6309turbo.o 
@@ -178,6 +178,9 @@ $(ODIR)/hd6309saveflags.o: hd6309saveflags.asm
 	mv hd6309saveflags.obj $@
 
 $(ODIR)/iniman.o: iniman.c iniman.h
+	$(CC) -c $(CCFLAGS) $< -o $@
+
+$(ODIR)/wizard.o: wizard.c wizard.h defines.h vcc.h config.h pakinterface.h fileops.h iniman.h
 	$(CC) -c $(CCFLAGS) $< -o $@
 
 clean:

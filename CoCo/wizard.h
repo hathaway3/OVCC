@@ -1,5 +1,5 @@
-#ifndef __FILEOPS_H__
-#define __FILEOPS_H__
+#ifndef __WIZARD_H__
+#define __WIZARD_H__
 /*
 Copyright 2015 by Joseph Forgione
 This file is part of VCC (Virtual Color Computer).
@@ -22,21 +22,17 @@ This file is part of VCC (Virtual Color Computer).
 extern "C" {
 #endif
 
-void PathStripPath(char *);
-void ValidatePath(char *Path);
-int CheckPath(char *);
-int PathRemoveFileSpec(char *);
-int PathRemoveExtension(char *);
-char* PathFindExtension(char *);
-//int WritePrivateProfileString(char *, char *, char *, char *);
-char GetPathDelim();
-char *GetPathDelimStr();
-int ResolvePlatformPath(const char *filename, char *resolved, size_t max_len);
-void MakeModulePathPortable(char *Path);
-int GetPakSearchDir(char *out, size_t max_len);
+// Shows the Startup Wizard window (CPU/RAM/peripheral picker).
+//
+// firstRun = 1: boot-time flow -- the wizard's own Finish/Skip buttons write
+//   Vcc.ini and then call FinishBoot() themselves (see vcc.c), since nothing
+//   has booted yet.
+// firstRun = 0: menu-triggered flow (Configuration -> "Setup Wizard...") --
+//   Finish hot-swaps the already-running config instead of booting.
+void RunStartupWizard(SystemState2 *state, int firstRun);
 
 #ifdef __cplusplus
-	}
+}
 #endif
 
 #endif
