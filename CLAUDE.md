@@ -43,6 +43,10 @@ make -C HardDisk -f Makefiles/Darwin/makefile test
 
 The `ovcc` executable itself has no test target.
 
+### CI / releases
+
+`.github/workflows/release.yml` runs `build_and_deploy.sh` on `macos-latest` when a `v*` tag is pushed (or via `workflow_dispatch`), zips `ovcc.app` with `zip -y` (preserves framework symlinks), and publishes a GitHub Release. Version strings come from `git describe --tags --long --dirty` (fallback `1.6.1-<count>-g<sha>`). There is no push/PR CI job — breakage is only caught at tag time.
+
 ### Running after build
 
 macOS builds **must** be launched from `ovcc.app` (double-click or `open ovcc.app`) — running the `ovcc` binary directly from a terminal leaves keyboard focus with the terminal. The bundle launcher auto-symlinks roms/dsks/vhds placed next to the `.app`. See `README_MAC.md` for ROM placement and troubleshooting.
