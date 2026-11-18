@@ -542,7 +542,11 @@ void CaptureBit(unsigned char Sample)
 
 int OpenPrintFile(char *FileName)
 {
-
+	if (hPrintFile != NULL)
+	{
+		AG_CloseFile(hPrintFile);
+		hPrintFile = NULL;
+	}
 	hPrintFile=AG_OpenFile(FileName, "w+");
 	if (hPrintFile==NULL)
 		return(0);
@@ -551,8 +555,11 @@ int OpenPrintFile(char *FileName)
 
 void ClosePrintFile(void)
 {
-	AG_CloseFile(hPrintFile);
-	hPrintFile=NULL;
+	if (hPrintFile != NULL)
+	{
+		AG_CloseFile(hPrintFile);
+		hPrintFile=NULL;
+	}
 	hout=NULL;
 	return;
 }

@@ -47,7 +47,7 @@ extern AG_MenuItem *GetMenuAnchor();
 
 // Storage for Pak ROMs
 static uint8_t *ExternalRomBuffer = nullptr; 
-static unsigned short ExternROMsize = 0;
+static size_t ExternROMsize = 0;
 static bool RomPackLoaded = false;
 
 extern SystemState2 EmuState2;
@@ -148,7 +148,10 @@ void ResetBus(void)
 	if (ExternalRomBuffer != NULL && ExternROMsize != 0)
 	{
 		unsigned char *ptrpakmem = GetPakExtMem();
-		if (ptrpakmem != NULL) { memcpy(GetPakExtMem(), ExternalRomBuffer, ExternROMsize); }
+		if (ptrpakmem != NULL) {
+			size_t copyLen = ExternROMsize > 0x8000 ? 0x8000 : ExternROMsize;
+			memcpy(ptrpakmem, ExternalRomBuffer, copyLen);
+		}
 	}
 	return;
 }
@@ -411,20 +414,16 @@ int load_ext_rom(char filename[MAX_PATH])
 	// Open the ROM file, fail if unable to
 	FILE *rom_handle = fopen(filename, "rb");
 	if (rom_handle == nullptr) return 0;
-	
-	// Load the file, one byte at a time.. (TODO: Get size and read entire block)
-	size_t index=0;
-	while ((feof(rom_handle) == 0) && (index < PAK_MAX_MEM)) {
-		ExternalRomBuffer[index++] = fgetc(rom_handle);
-	}
-	ExternROMsize = --index;
+
+	size_t index = fread(ExternalRomBuffer, 1, PAK_MAX_MEM, rom_handle);
+	ExternROMsize = index;
 	fclose(rom_handle);
 	
 	UnloadDll(1);
 	BankedCartOffset=0;
 	RomPackLoaded=true;
 
-	return index;
+	return (int)index;
 }
 
 void UnloadDll(short int config)
@@ -496,12 +495,14 @@ void UnloadPack(void)
 int FileID(char *Filename)
 {
 	FILE *DummyHandle=NULL;
-	char elf[5] = { 0x7f, 'E', 'L', 'F', 0 };
-	char pe[4] = { 'M', 'Z', 0220, 0 };
-	char mach[5] = { 0xcf, 0xfa, 0xed, 0xfe, 0 };
-	char *match = NULL;
-	char Temp[5]="";
-	char *Platform = SDL_GetPlatform();
+	unsigned char elf[4] = { 0x7f, 'E', 'L', 'F' };
+	unsigned char pe[4] = { 'M', 'Z', 0220, 0 };
+	unsigned char mach[4] = { 0xcf, 0xfa, 0xed, 0xfe };
+	unsigned char machfat[4] = { 0xca, 0xfe, 0xba, 0xbe }; // universal/fat Mach-O
+	unsigned char *match = NULL;
+	unsigned char *matchFat = NULL;
+	unsigned char Temp[4] = { 0, 0, 0, 0 };
+	const char *Platform = SDL_GetPlatform();
 
 	if (strcmp(Platform, "Linux") == 0)
 	{
@@ -514,6 +515,7 @@ int FileID(char *Filename)
 	else if (strcmp(Platform, "Mac OS X") == 0)
 	{
 		match = mach;
+		matchFat = machfat;
 	}
 
 	if (match == NULL)
@@ -528,17 +530,17 @@ int FileID(char *Filename)
 		return(0);	//File Doesn't exist
 	}
 
-	Temp[0] = fgetc(DummyHandle);
-	Temp[1] = fgetc(DummyHandle);
-	Temp[2] = fgetc(DummyHandle);
-	Temp[3] = fgetc(DummyHandle);
-	Temp[4] = 0;
-
+	size_t nread = fread(Temp, 1, 4, DummyHandle);
 	fclose(DummyHandle);
 
-	if (strcmp(Temp, match) ==0 )
+	if (nread == 4 && memcmp(Temp, match, 4) == 0)
 	{
 		return(1);	//DLL File
+	}
+
+	if (nread == 4 && matchFat != NULL && memcmp(Temp, matchFat, 4) == 0)
+	{
+		return(1);	//DLL File (universal binary)
 	}
 
 	return(2);		//Rom Image

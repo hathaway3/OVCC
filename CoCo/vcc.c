@@ -263,6 +263,9 @@ int main(int argc, char **argv)
 		FinishBoot(&EmuState2);
 	}
 
+	extern void ApplyDisplaySettingsUI(void);
+	ApplyDisplaySettingsUI();
+
     AG_EventLoop();
 	
 	EmuState2.Pixels = NULL;
@@ -322,8 +325,11 @@ void ToggleThrottleSpeed()
 
 void ToggleScreenStatus()
 {
-	SetInfoBandAGAR(!SetInfoBandAGAR(QUERY));
-    InvalidateBoarderAGAR();
+	extern void ApplyInfoBandUI(int);
+	int visible = !SetInfoBandAGAR(QUERY);
+	SetInfoBandAGAR((unsigned char)visible);
+	ApplyInfoBandUI(visible);
+	InvalidateBoarderAGAR();
 }
 
 void ToggleFullScreen()
@@ -406,8 +412,17 @@ void DoHardReset(SystemState2* const HRState)
 			SetSWMmu();
 			break;
 #ifndef __MINGW32__
-		case 1: // Hardware MMU
-			SetHWMmu();
+		case 1: // Hardware MMU (requires <= 8KB OS pages, i.e., not Apple Silicon 16KB)
+			if (sysconf(_SC_PAGESIZE) <= 8192)
+			{
+				SetHWMmu();
+			}
+			else
+			{
+				fprintf(stderr, "Hardware MMU unsupported on >8KB OS pages; using Software MMU.\n");
+				HRState->MmuType = 0;
+				SetSWMmu();
+			}
 			break;
 #endif
 	}
@@ -527,8 +542,21 @@ unsigned char SetMmuType(unsigned char Tmp)
 		break;
 
 	case 1:
-		EmuState2.MmuType=1;
-		strcpy(MmuName,"Hardware Emulation");
+#ifdef __MINGW32__
+		EmuState2.MmuType=0;
+		strcpy(MmuName,"Software Simulation");
+#else
+		if (sysconf(_SC_PAGESIZE) <= 8192)
+		{
+			EmuState2.MmuType=1;
+			strcpy(MmuName,"Hardware Emulation");
+		}
+		else
+		{
+			EmuState2.MmuType=0;
+			strcpy(MmuName,"Software Simulation");
+		}
+#endif
 		break;
 	}
 	return(EmuState2.MmuType);
@@ -700,11 +728,10 @@ void FullScreenToggleAGAR(void)
 	if (EmuState2.FullScreen)
 	{	
 		AG_WindowMaximize(EmuState2.agwin);
-		//AG_WindowUnmaximize(EmuState2.agwin);
 	}
-	else{
-		AG_WindowMinimize(EmuState2.agwin);
-		AG_WindowUnminimize(EmuState2.agwin);
+	else
+	{
+		AG_WindowUnmaximize(EmuState2.agwin);
 	}
 
 	EmuState2.Resizing = 0;

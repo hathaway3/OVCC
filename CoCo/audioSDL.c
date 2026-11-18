@@ -59,9 +59,6 @@ int SoundInitSDL (int devID, unsigned short Rate)
 	}
 
 	Rate=(Rate & 3);
-	if (Rate != 0)	//Force 44100 or Mute
-		Rate = 3;
-
 	CurrentRate=Rate;
 
 	if (InitPassed)
@@ -80,13 +77,16 @@ int SoundInitSDL (int devID, unsigned short Rate)
 
 	if (Rate)
 	{
+		const char *devName = (Cards != NULL && devID >= 0 && devID < CardCount && Cards[devID].CardName[0] != '\0')
+			? Cards[devID].CardName
+			: NULL;
 		audioSpec.callback = NULL;
 		audioSpec.channels = 2;
 		audioSpec.freq = BitRate;
 		audioSpec.format = AUDIO_S16LSB;
 		audioSpec.samples = 4096;
 
-		audioDev = SDL_OpenAudioDevice(Cards[devID].CardName, 0, &audioSpec, &actualAudioSpec, 0);
+		audioDev = SDL_OpenAudioDevice(devName, 0, &audioSpec, &actualAudioSpec, 0);
 		//audioDev = SDL_OpenAudioDevice(Cards[devID].CardName, 0, NULL, NULL, 0);
 
 		if (audioDev == 0)
@@ -137,7 +137,8 @@ int GetSoundCardListSDL (SndCardList *List)
 
 	for(CardCount = 0 ; CardCount < totAudioDevs && CardCount < MAXCARDS ; CardCount++)
 	{
-		strcpy(Cards[CardCount].CardName, SDL_GetAudioDeviceName(CardCount, 0));
+		const char *name = SDL_GetAudioDeviceName(CardCount, 0);
+		AG_Strlcpy(Cards[CardCount].CardName, name ? name : "", CARDNAME_LEN);
 		Cards[CardCount].sdlID = CardCount;
 	}
 	return(CardCount);

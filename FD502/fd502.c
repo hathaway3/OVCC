@@ -289,7 +289,9 @@ void BrowseROM(AG_Event *event)
     AG_WindowSetCloseAction(fdw, AG_WINDOW_DETACH);
 
     AG_FileDlg *fd = AG_FileDlgNew(fdw, AG_FILEDLG_EXPAND | AG_FILEDLG_CLOSEWIN | AG_FILEDLG_MASK_EXT);
-    AG_FileDlgSetDirectory(fd, ".");
+    char mediaDir[MAX_PATH];
+    GetDefaultMediaDir(mediaDir, sizeof(mediaDir));
+    AG_FileDlgSetDirectory(fd, mediaDir);
 
 	AG_FileDlgAddType(fd, "Disk Rom Images", "*.rom,*.bin",	UpdateROM, NULL);
     AG_WindowShow(fdw);
@@ -526,7 +528,9 @@ void BrowseFD502(AG_Event *event)
     AG_WindowSetCloseAction(fdw, AG_WINDOW_DETACH);
 
     AG_FileDlg *fd = AG_FileDlgNew(fdw, AG_FILEDLG_EXPAND | AG_FILEDLG_CLOSEWIN | AG_FILEDLG_MASK_EXT);
-    AG_FileDlgSetDirectory(fd, ".");
+    char mediaDir[MAX_PATH];
+    GetDefaultMediaDir(mediaDir, sizeof(mediaDir));
+    AG_FileDlgSetDirectory(fd, mediaDir);
 
 	AG_FileDlgAddType(fd, "Disk Images", "*.dsk,*.os9",	LoadFD502, "%i", disk);
     AG_WindowShow(fdw);

@@ -241,9 +241,25 @@ char* PathFindExtension(char *Path)
 }
 
 #ifdef DARWIN
+static void EnsureDarwinAppSupportDir(char *out, size_t max_len) {
+    char *home = getenv("HOME");
+    if (home) {
+        snprintf(out, max_len, "%s/Library/Application Support/OVCC", home);
+        struct stat st = {0};
+        if (stat(out, &st) == -1) {
+            mkdir(out, 0755);
+        }
+    } else if (max_len > 0) {
+        out[0] = '\0';
+    }
+}
+
 int ResolvePlatformPath(const char *filename, char *resolved, size_t max_len) {
+    char app_support[1024] = "";
+    EnsureDarwinAppSupportDir(app_support, sizeof(app_support));
+
     if (!filename || filename[0] == '\0') {
-        resolved[0] = '\0';
+        if (max_len > 0) resolved[0] = '\0';
         return 0;
     }
     // If absolute path
@@ -286,15 +302,7 @@ int ResolvePlatformPath(const char *filename, char *resolved, size_t max_len) {
         strncpy(bundle_plugins, exec_dir, sizeof(bundle_plugins));
     }
 
-    char app_support[1024] = "";
-    char *home = getenv("HOME");
-    if (home) {
-        snprintf(app_support, sizeof(app_support), "%s/Library/Application Support/OVCC", home);
-        struct stat st = {0};
-        if (stat(app_support, &st) == -1) {
-            mkdir(app_support, 0755);
-        }
-    } else {
+    if (app_support[0] == '\0') {
         strncpy(app_support, exec_dir, sizeof(app_support));
     }
 
@@ -468,3 +476,17 @@ int GetPakSearchDir(char *out, size_t max_len)
     return 1;
 }
 #endif
+
+// Default starting directory for media/ROM/tape file dialogs. On macOS,
+// ovcc-launch sets cwd to Contents/MacOS inside the .app bundle, so "." would
+// drop the user inside the read-only bundle; point them at Application Support
+// instead.
+void GetDefaultMediaDir(char *out, size_t max_len)
+{
+#ifdef DARWIN
+    EnsureDarwinAppSupportDir(out, max_len);
+    if (out[0] != '\0')
+        return;
+#endif
+    snprintf(out, max_len, ".");
+}

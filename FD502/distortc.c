@@ -106,11 +106,28 @@ unsigned char read_time(unsigned short port)
 		ret_val = now->tm_min / 10;
 		break;
 		case 4:
-		ret_val = now->tm_hour % 10;
+		{
+			int h = now->tm_hour;
+			if (Hour12)
+			{
+				h %= 12;
+				if (h == 0) h = 12;
+			}
+			ret_val = h % 10;
+		}
 		break;
 		case 5:
-		ret_val = now->tm_hour / 10;
-		
+		{
+			int h = now->tm_hour;
+			unsigned char pm = 0;
+			if (Hour12)
+			{
+				pm = (h >= 12) ? 0x04 : 0;
+				h %= 12;
+				if (h == 0) h = 12;
+			}
+			ret_val = (unsigned char)((h / 10) | pm);
+		}
 		break;
 		case 6:
 		ret_val = now->tm_mday % 10;

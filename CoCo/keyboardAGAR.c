@@ -323,9 +323,7 @@ void vccKeyboardHandleKeySDL(unsigned short key, unsigned short ScanCode, unsign
 	{
 		ScanCode = AG_KEY_LCTRL;
 	}
-#endif
-#if 0 // TODO: ALT?
-	// ALT key - right -> left
+	// ALT/Option key - Cocoa sends AG_KEY_RALT for both Option keys
 	if (ScanCode == AG_KEY_RALT)
 	{
 		ScanCode = AG_KEY_LALT;
@@ -690,6 +688,14 @@ void SetStickNumbersSDL(unsigned char Temp1,unsigned char Temp2)
 /*****************************************************************************/
 /**
 */
+static unsigned short ScaleSDLAxis(Sint16 axisVal)
+{
+	int scaled = ((int)axisVal + 32768) >> 10;
+	if (scaled < 0) scaled = 0;
+	if (scaled > 63) scaled = 63;
+	return (unsigned short)scaled;
+}
+
 unsigned short get_pot_valueSDL(unsigned char pot)
 {
 	extern int gWindow;
@@ -697,19 +703,25 @@ unsigned short get_pot_valueSDL(unsigned char pot)
 	if (LeftSDL.UseMouse == JOYSTICK_JOYSTICK)
 	{
 		JoyStickPollSDL(&Stick1, LeftStickNumber);
-		LeftStickX = (unsigned short)(SDL_JoystickGetAxis(Stick1, 0)+32678)>>10;
-		LeftStickY = (unsigned short)(SDL_JoystickGetAxis(Stick1, 1)+32678)>>10;
-		LeftButton1Status = SDL_JoystickGetButton(Stick1, 0);
-		LeftButton2Status = SDL_JoystickGetButton(Stick1, 1);
+		if (Stick1 != NULL)
+		{
+			LeftStickX = ScaleSDLAxis(SDL_JoystickGetAxis(Stick1, 0));
+			LeftStickY = ScaleSDLAxis(SDL_JoystickGetAxis(Stick1, 1));
+			LeftButton1Status = SDL_JoystickGetButton(Stick1, 0);
+			LeftButton2Status = SDL_JoystickGetButton(Stick1, 1);
+		}
 	}
 
 	if (RightSDL.UseMouse == JOYSTICK_JOYSTICK)
 	{
 		JoyStickPollSDL(&Stick1, RightStickNumber);
-		RightStickX= (unsigned short)(SDL_JoystickGetAxis(Stick1, 0)+32678)>>10;
-		RightStickY= (unsigned short)(SDL_JoystickGetAxis(Stick1, 1)+32678)>>10;
-		RightButton1Status = SDL_JoystickGetButton(Stick1, 0);
-		RightButton2Status = SDL_JoystickGetButton(Stick1, 1);
+		if (Stick1 != NULL)
+		{
+			RightStickX = ScaleSDLAxis(SDL_JoystickGetAxis(Stick1, 0));
+			RightStickY = ScaleSDLAxis(SDL_JoystickGetAxis(Stick1, 1));
+			RightButton1Status = SDL_JoystickGetButton(Stick1, 0);
+			RightButton2Status = SDL_JoystickGetButton(Stick1, 1);
+		}
 	}
 
 	switch (pot)

@@ -3629,7 +3629,7 @@ unsigned char SetScanLinesAGAR(unsigned char Lines)
 		ClsAGAR(0,&EmuState2);
 		BoarderChange=3;
 	}
-	return(0);
+	return(EmuState2.ScanLines);
 }
 /*
 unsigned char SetArtifacts(unsigned char Tmp)

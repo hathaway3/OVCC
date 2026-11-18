@@ -159,11 +159,18 @@ void ADDCALL ModuleName(char *ModName, AG_MenuItem *Temp)
 	return ;
 }
 
+static void ReleaseSlotModule(unsigned char Slot);
+
 void ADDCALL ModuleConfig(unsigned char func)
 {
 	switch (func)
 	{
-	case 0: // Destroy Menus
+	case 0: // Destroy Menus & tear down all mounted slave modules
+		if (configWin != NULL)
+		{
+			AG_ObjectDetach(configWin);
+			configWin = NULL;
+		}
 		if (itemConfig)
 			AG_MenuDel(itemConfig);
 		itemConfig = NULL;
@@ -175,6 +182,9 @@ void ADDCALL ModuleConfig(unsigned char func)
 			if (itemMenu[i])
 				AG_MenuDel(itemMenu[i]);
 			itemMenu[i] = NULL;
+			itemLoadSlot[i] = NULL;
+			itemEjectSlot[i] = NULL;
+			ReleaseSlotModule((unsigned char)i);
 		}
 	break;
 
@@ -357,7 +367,8 @@ unsigned char ADDCALL ModuleReset(void)
 
 		//ModuleResetCalls[Temp] = NULL;
 
-		if (PakRomAddr != NULL && ExtRomPointers[modidx] != NULL && ExtRomSizes[modidx] != 0)
+		if (PakRomAddr != NULL && modidx == ChipSelectSlot &&
+		    ExtRomPointers[modidx] != NULL && ExtRomSizes[modidx] != 0)
 			memcpy(PakRomAddr, ExtRomPointers[modidx], ExtRomSizes[modidx]);
 	}
 	if (PakSetCart != NULL)
@@ -398,9 +409,15 @@ void ADDCALL SetCart(SETCART Pointer)
 	return;
 }
 
+static void ConfigWinDetached(AG_Event *event)
+{
+	configWin = NULL;
+}
+
 void OKCallback(AG_Event *event)
 {
 	WriteConfig();
+	configWin = NULL;
 	AG_CloseFocusedWindow();
 }
 
@@ -428,6 +445,7 @@ void ConfigMPI(AG_Event *event)
     AG_WindowSetGeometryAligned(win, AG_WINDOW_ALIGNMENT_NONE, 454, 350);
     AG_WindowSetCaptionS(win, "MPI Config");
     AG_WindowSetCloseAction(win, AG_WINDOW_DETACH);
+    AG_SetEvent(win, "window-detached", ConfigWinDetached, NULL);
 
     AG_Box *hbox, *vbox, *hbox2, *vbox2;
 
@@ -593,7 +611,7 @@ unsigned char MountModule(unsigned char Slot,char *ModName)
 	return(0);
 }
 
-void UnloadModule(unsigned char Slot)
+static void ReleaseSlotModule(unsigned char Slot)
 {
 	if (ConfigModuleCalls[Slot] != NULL)
 	{
@@ -606,6 +624,7 @@ void UnloadModule(unsigned char Slot)
 	SetInteruptCallPointerCalls[Slot]=NULL;
 	DmaMemPointerCalls[Slot]=NULL;
 	MmuMemPointerCalls[Slot]=NULL;
+	PakRomShareCalls[Slot]=NULL;
 	HeartBeatCalls[Slot]=NULL;
 	PakMemWrite8Calls[Slot]=NULL;
 	PakMemRead8Calls[Slot]=NULL;
@@ -613,17 +632,24 @@ void UnloadModule(unsigned char Slot)
 	ModuleAudioSampleCalls[Slot]=NULL;
 	ModuleResetCalls[Slot]=NULL;
 	SetIniPathCalls[Slot]=NULL;
-	strcpy(ModulePaths[Slot],"");
-	strcpy(ModuleNames[Slot],"Empty");
-	strcpy(CatNumber[Slot],"");
-	strcpy(SlotLabel[Slot],"Empty");
+	SetCartCalls[Slot]=NULL;
 	if (hinstLib[Slot] !=NULL)
 		SDL_UnloadObject(hinstLib[Slot]); 
 	if (ExtRomPointers[Slot] !=NULL)
 		free(ExtRomPointers[Slot]);
 	hinstLib[Slot]=NULL;
 	ExtRomPointers[Slot]=NULL;
+	ExtRomSizes[Slot]=0;
 	CartForSlot[Slot]=0;
+}
+
+void UnloadModule(unsigned char Slot)
+{
+	ReleaseSlotModule(Slot);
+	strcpy(ModulePaths[Slot],"");
+	strcpy(ModuleNames[Slot],"Empty");
+	strcpy(CatNumber[Slot],"");
+	strcpy(SlotLabel[Slot],"Empty");
 	UpdateMenu(Slot);
 	UpdateConfig(Slot);
 	return;
@@ -674,22 +700,23 @@ void LoadConfig(void)
 void WriteConfig(void)
 {
 	WritePrivateProfileInt(moduleName,"SWPOSITION",SwitchSlot,IniFile);
-	ValidatePath(ModulePaths[0]);
-	WritePrivateProfileString(moduleName,"SLOT1",ModulePaths[0],IniFile);
-	ValidatePath(ModulePaths[1]);
-	WritePrivateProfileString(moduleName,"SLOT2",ModulePaths[1],IniFile);
-	ValidatePath(ModulePaths[2]);
-	WritePrivateProfileString(moduleName,"SLOT3",ModulePaths[2],IniFile);
-	ValidatePath(ModulePaths[3]);
-	WritePrivateProfileString(moduleName,"SLOT4",ModulePaths[3],IniFile);
+	for (int slot = 0; slot < MAXPAX; slot++)
+	{
+		char slotname[8];
+		sprintf(slotname, "SLOT%1i", slot + 1);
+		ValidatePath(ModulePaths[slot]);
+		MakeModulePathPortable(ModulePaths[slot]);
+		WritePrivateProfileString(moduleName, slotname, ModulePaths[slot], IniFile);
+	}
 	return;
 }
 
 void UpdateConfig(unsigned char slot)
 {
-	char slotname[6] = "SLOT";
+	char slotname[8] = "SLOT";
 	sprintf(slotname, "SLOT%1i", slot+1);
 	ValidatePath(ModulePaths[slot]);
+	MakeModulePathPortable(ModulePaths[slot]);
 	WritePrivateProfileString(moduleName, slotname, ModulePaths[slot],IniFile);
 
 }
@@ -745,14 +772,14 @@ void ReadModuleParms(unsigned char Slot,char *String)
 int FileID(char *Filename)
 {
 	FILE *DummyHandle=NULL;
-	char elf[5] = { 0x7f, 'E', 'L', 'F', 0 };
-	char pe[4] = { 'M', 'Z', 0220, 0 };
-	char mach[5] = { 0xcf, 0xfa, 0xed, 0xfe, 0 };
-	char machfat[5] = { 0xca, 0xfe, 0xba, 0xbe, 0 };	// universal/fat Mach-O
-	char *match = NULL;
-	char *matchFat = NULL;
-	char Temp[5]="";
-	char *Platform = SDL_GetPlatform();
+	unsigned char elf[4] = { 0x7f, 'E', 'L', 'F' };
+	unsigned char pe[4] = { 'M', 'Z', 0220, 0 };
+	unsigned char mach[4] = { 0xcf, 0xfa, 0xed, 0xfe };
+	unsigned char machfat[4] = { 0xca, 0xfe, 0xba, 0xbe };	// universal/fat Mach-O
+	unsigned char *match = NULL;
+	unsigned char *matchFat = NULL;
+	unsigned char Temp[4] = { 0, 0, 0, 0 };
+	const char *Platform = SDL_GetPlatform();
 
 	if (strcmp(Platform, "Linux") == 0)
 	{
@@ -780,15 +807,10 @@ int FileID(char *Filename)
 		return(0);	//File Doesn't exist
 	}
 
-	Temp[0] = fgetc(DummyHandle);
-	Temp[1] = fgetc(DummyHandle);
-	Temp[2] = fgetc(DummyHandle);
-	Temp[3] = fgetc(DummyHandle);
-	Temp[4] = 0;
-
+	size_t nread = fread(Temp, 1, 4, DummyHandle);
 	fclose(DummyHandle);
 
-	if (strcmp(Temp, match) ==0 )
+	if (nread == 4 && memcmp(Temp, match, 4) == 0)
 	{
 		return(1);	//DLL File
 	}
@@ -797,7 +819,7 @@ int FileID(char *Filename)
 	// BACKLOG.md P1 1.1) doesn't start with the thin Mach-O magic above --
 	// without this it would be misidentified as a ROM image and loaded as
 	// raw cart data instead of dlopen()'d.
-	if (matchFat != NULL && strcmp(Temp, matchFat) == 0)
+	if (nread == 4 && matchFat != NULL && memcmp(Temp, matchFat, 4) == 0)
 	{
 		return(1);	//DLL File (universal binary)
 	}
@@ -863,7 +885,10 @@ void BrowseSlot(AG_Event *event)
     AG_WindowSetCloseAction(fdw, AG_WINDOW_DETACH);
 
     AG_FileDlg *fd = AG_FileDlgNew(fdw, AG_FILEDLG_EXPAND | AG_FILEDLG_CLOSEWIN | AG_FILEDLG_MASK_EXT);
-    AG_FileDlgSetDirectory(fd, ".");
+    char pakDir[MAX_PATH];
+    if (!GetPakSearchDir(pakDir, sizeof(pakDir)))
+        strcpy(pakDir, ".");
+    AG_FileDlgSetDirectory(fd, pakDir);
 
 	AG_FileDlgAddType(fd, "CoCo Pak or Cartridge", "*.rom,*.ccc,*.so,*.dll",	LoadSlot, "%i", slot);
     AG_WindowShow(fdw);

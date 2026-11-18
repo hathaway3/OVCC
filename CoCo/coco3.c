@@ -131,6 +131,9 @@ float RenderFrame (SystemState2 *RFState2, unsigned long DCnt)
 		SetBoarderChangeAGAR(0);
 	}
 
+	if (RFState2->FrameSkip > 0)
+		FrameCounter = (FrameCounter + 1) % RFState2->FrameSkip;
+
 	for (RFState2->LineCounter=0;RFState2->LineCounter<6;RFState2->LineCounter++)		//Vertical Retrace 6 H lines
 		CPUCycle();
 
@@ -560,8 +563,6 @@ unsigned short SetAudioRate (unsigned short Rate)
 	SoundInterupt=0;
 	CycleDrift=0;
 	AudioIndex=0;
-	if (Rate != 0)	//Force Mute or 44100Hz
-		Rate = 44100;
 
 	if (Rate==0)
 		SndEnable=0;

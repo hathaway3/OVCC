@@ -20,12 +20,13 @@ This file is part of VCC (Virtual Color Computer).
 #include <stdlib.h>
 #include <string.h>
 #include "tcc1014mmu.h"	//Need memread for CpuDump
+#include "defines.h"
+#include "fileops.h"
 #include "logger.h"
 
 void WriteLog(char *Message,unsigned char Type)
 {
 	static FILE  *disk_handle=NULL;
-	unsigned long dummy;
 	switch (Type)
 	{
 	case TOCONS:
@@ -39,8 +40,18 @@ void WriteLog(char *Message,unsigned char Type)
 		// break;
 
 	case TOFILE:
-	if (disk_handle ==NULL)
+	if (disk_handle == NULL)
+	{
+#ifdef __MINGW32__
 		disk_handle=fopen("c:\\VccLog.txt","w");
+#else
+		char logPath[MAX_PATH];
+		ResolvePlatformPath("VccLog.txt", logPath, sizeof(logPath));
+		disk_handle=fopen(logPath,"w");
+#endif
+	}
+	if (disk_handle == NULL)
+		break;
 
 	fprintf(disk_handle,"%s\r\n",Message);
 	fflush(disk_handle);
@@ -54,7 +65,15 @@ void CpuDump(void)
 {
 	FILE* disk_handle=NULL;
 	int x;
+#ifdef __MINGW32__
 	disk_handle=fopen("c:\\cpuspace_dump.txt","wb");
+#else
+	char dumpPath[MAX_PATH];
+	ResolvePlatformPath("cpuspace_dump.txt", dumpPath, sizeof(dumpPath));
+	disk_handle=fopen(dumpPath,"wb");
+#endif
+	if (disk_handle == NULL)
+		return;
 	for (x=0;x<=65535;x++)
 		fprintf(disk_handle,"%c",MemRead8(x));
 	fflush(disk_handle);

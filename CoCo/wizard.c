@@ -42,6 +42,7 @@ extern STRConfig CurrentConfig;
 
 static SystemState2 *wizState = NULL;
 static int wizFirstRun = 1;
+static int wizHandled = 0;
 
 static int wizCpuType = 0;
 static int wizRamSize = 1;
@@ -174,6 +175,8 @@ static void ApplyWizardSelections(void)
 	int i, selectedIdx[MAX_MPI_SLOTS];
 	int selectedCount = 0;
 	int mpiIdx;
+	char onBootPath[MAX_PATH] = "";
+	char iniPath[MAX_PATH] = "";
 
 	CurrentConfig.CpuType = (unsigned char)wizCpuType;
 	CurrentConfig.RamSize = (unsigned char)wizRamSize;
@@ -182,13 +185,21 @@ static void ApplyWizardSelections(void)
 		if (wizChecked[i])
 			selectedIdx[selectedCount++] = i;
 
+	// Write base settings first: WriteIniFile() queries GetCurrentModule() and
+	// overwrites CurrentConfig.ModulePath with the *currently* loaded module,
+	// so [Module]/OnBoot and [MPI] must be written afterward.
+	WriteIniFile();
+	GetIniFilePath(iniPath);
+
 	if (selectedCount == 0)
 	{
-		UpdateOnBoot("");
+		onBootPath[0] = '\0';
+		if (!wizFirstRun)
+			UnloadPack();
 	}
 	else if (selectedCount == 1)
 	{
-		UpdateOnBoot(wizPaks[selectedIdx[0]].Path);
+		AG_Strlcpy(onBootPath, wizPaks[selectedIdx[0]].Path, sizeof(onBootPath));
 	}
 	else
 	{
@@ -198,35 +209,46 @@ static void ApplyWizardSelections(void)
 		{
 			// No MPI pak installed -- fall back to the first pick alone so
 			// the user still ends up with a working single-device system.
-			UpdateOnBoot(wizPaks[selectedIdx[0]].Path);
+			AG_Strlcpy(onBootPath, wizPaks[selectedIdx[0]].Path, sizeof(onBootPath));
 		}
 		else
 		{
-			char iniPath[MAX_PATH];
-
-			GetIniFilePath(iniPath);
-			UpdateOnBoot(wizPaks[mpiIdx].Path);
+			AG_Strlcpy(onBootPath, wizPaks[mpiIdx].Path, sizeof(onBootPath));
 
 			// Same [MPI] SWPOSITION/SLOTn schema mpi.c's own WriteConfig()
-			// writes (mpi/mpi.c:674-686) -- MPI will read these back itself
-			// via SetIniPath()->LoadConfig() when InsertModule() mounts it.
-			WritePrivateProfileInt("MPI", "SWPOSITION", 3, iniPath);
+			// writes -- MPI will read these back itself via
+			// SetIniPath()->LoadConfig() when InsertModule() mounts it.
+			// Slot 1 (0) is always populated when selectedCount >= 2.
+			WritePrivateProfileInt("MPI", "SWPOSITION", 0, iniPath);
 			for (i = 0; i < MAX_MPI_SLOTS; i++)
 			{
 				char slotKey[8];
+				char slotPath[MAX_PATH] = "";
 				sprintf(slotKey, "SLOT%d", i + 1);
-				WritePrivateProfileString("MPI", slotKey,
-					(i < selectedCount) ? wizPaks[selectedIdx[i]].Path : "", iniPath);
+				if (i < selectedCount)
+				{
+					AG_Strlcpy(slotPath, wizPaks[selectedIdx[i]].Path, sizeof(slotPath));
+					ValidatePath(slotPath);
+					MakeModulePathPortable(slotPath);
+				}
+				WritePrivateProfileString("MPI", slotKey, slotPath, iniPath);
 			}
 		}
 	}
 
-	WriteIniFile();
+	ValidatePath(onBootPath);
+	MakeModulePathPortable(onBootPath);
+	WritePrivateProfileString("Module", "OnBoot", onBootPath, iniPath);
+	FlushPrivateProfile(iniPath);
+
 	LoadConfig(wizState); // Re-reads what we just wrote and calls InsertModule() with it.
+	extern void ApplyDisplaySettingsUI(void);
+	ApplyDisplaySettingsUI();
 }
 
 static void FinishWizard(AG_Event *event)
 {
+	wizHandled = 1;
 	ApplyWizardSelections();
 
 	if (wizFirstRun)
@@ -246,11 +268,27 @@ static void FinishWizard(AG_Event *event)
 static void SkipWizard(AG_Event *event)
 {
 	extern void FinishBoot(SystemState2 *);
+	extern void ApplyDisplaySettingsUI(void);
 
+	wizHandled = 1;
 	LoadConfig(wizState);
 	FinishBoot(wizState);
+	ApplyDisplaySettingsUI();
 
 	AG_CloseFocusedWindow();
+}
+
+static void WizardWindowDetached(AG_Event *event)
+{
+	if (wizFirstRun && !wizHandled)
+	{
+		extern void FinishBoot(SystemState2 *);
+		extern void ApplyDisplaySettingsUI(void);
+		wizHandled = 1;
+		LoadConfig(wizState);
+		FinishBoot(wizState);
+		ApplyDisplaySettingsUI();
+	}
 }
 
 void RunStartupWizard(SystemState2 *state, int firstRun)
@@ -263,6 +301,7 @@ void RunStartupWizard(SystemState2 *state, int firstRun)
 
 	wizState = state;
 	wizFirstRun = firstRun;
+	wizHandled = 0;
 
 	if (firstRun)
 		ReadIniFile(); // Nothing has been read yet on a true first run; this seeds
@@ -283,6 +322,7 @@ void RunStartupWizard(SystemState2 *state, int firstRun)
 	AG_WindowSetGeometryAligned(win, AG_WINDOW_ALIGNMENT_NONE, 520, 420);
 	AG_WindowSetCaptionS(win, firstRun ? "Welcome to OVCC!" : "OVCC Setup Wizard");
 	AG_WindowSetCloseAction(win, AG_WINDOW_DETACH);
+	AG_SetEvent(win, "window-detached", WizardWindowDetached, NULL);
 
 	nb = AG_NotebookNew(win, AG_NOTEBOOK_EXPAND);
 

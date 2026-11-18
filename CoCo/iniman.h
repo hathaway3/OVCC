@@ -1,3 +1,6 @@
+#ifndef __INIMAN_H__
+#define __INIMAN_H__
+
 /*
 Copyright 2019 Walter ZAMBOTTI
 This file is part of iniman
@@ -58,3 +61,5 @@ void FlushPrivateProfile(char *);
 void FlushAllPrivateProfile(void);
 bool DuplicatePrivateProfile(char *, char *);
 void SetBackupPrivateProfile(char *);
+
+#endif /* __INIMAN_H__ */

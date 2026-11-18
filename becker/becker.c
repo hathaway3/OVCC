@@ -604,7 +604,9 @@ void ADDCALL ModuleStatus(char *DWStatus)
 	// calculate speed
 	struct timespec now;
 
-	#define CLOCK_MONOTONIC 1 // Not picking up define from time.h for some reason?
+#ifndef CLOCK_MONOTONIC
+	#define CLOCK_MONOTONIC CLOCK_REALTIME
+#endif
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
 

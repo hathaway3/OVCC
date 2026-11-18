@@ -34,6 +34,7 @@ char *GetPathDelimStr();
 int ResolvePlatformPath(const char *filename, char *resolved, size_t max_len);
 void MakeModulePathPortable(char *Path);
 int GetPakSearchDir(char *out, size_t max_len);
+void GetDefaultMediaDir(char *out, size_t max_len);
 
 #ifdef __cplusplus
 	}

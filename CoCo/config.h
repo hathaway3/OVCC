@@ -33,6 +33,10 @@ void UpdateSoundBar(unsigned short,unsigned short);
 void UpdateTapeCounter(unsigned int,unsigned char);
 void UpdateOnBoot(char *);
 unsigned short TranslateDisp2Scan(int);
+void MiscConfigExternalBasic(const char *);
+void ConfigApplyCPUMultiplier(unsigned short);
+int AudioConfigGetRate(void);
+void AudioConfigGetDeviceName(int, char *, size_t);
 
 typedef struct  {
 	unsigned short	CPUMultiplyer;

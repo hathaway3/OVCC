@@ -17,6 +17,8 @@ This file is part of VCC (Virtual Color Computer).
 */
 
 #include "defines.h"
+#include <math.h>
+#include <unistd.h>
 #include <agar/core.h>
 #include <agar/gui.h>
 #include <agar/core/types.h>
@@ -63,7 +65,10 @@ static AG_Combo *comDev, *comQual;
 static AG_Menu *menu;
 static AG_MenuItem *itemCartridge = NULL, *itemEjectCart = NULL;
 static AG_Label *status = NULL;
-//static AG_Fixed *fx = NULL;
+static AG_Statusbar *statusBar = NULL;
+static AG_Fixed *videoPane = NULL;
+static SystemState2 *mainEmuState = NULL;
+static int enforcingResize = 0;
 
 static int soundDev = 0;
 static int soundQuality = 3;
@@ -110,6 +115,7 @@ static int showLeftJoystickValue = 0;
 static int showRightJoystickValue = 0;
 static int autoStartEmu = 1;
 static int autoStartCart = 1;
+static char externalBasicRom[MAX_PATH] = "";
 static char tapefile[512] = "<No Tape File!>";
 static int tapecounter = 0;
 static char tapeMode[64] = "STOP";
@@ -150,6 +156,8 @@ void LoadIniFile(AG_Event *event)
     extern void  ConfigLoadIniFile(char *);
 
     ConfigLoadIniFile(file);
+    extern void ApplyDisplaySettingsUI(void);
+    ApplyDisplaySettingsUI();
 }
 
 // Directory that holds Vcc.ini (writable; on macOS this is
@@ -269,25 +277,17 @@ void MonitorChangeF6(AG_Event *ev)
 
 void CPUIncDecF3F4(AG_Event *event)
 {
-    extern void ConfigOKApply(int);
-    extern void CPUConfigSpeed(int);
-    extern void JoyStickConfigRecordState();
-    
     int incdec = AG_INT(1);
+    int maxMult = CurrentConfig.MaxOverclock > 0 ? (int)CurrentConfig.MaxOverclock : 100;
+    int mult = (int)CurrentConfig.CPUMultiplyer + incdec;
 
-    cpuMax = (double)CurrentConfig.MaxOverclock * cpuMin;
-    cpuOCval = (double)CurrentConfig.CPUMultiplyer * cpuMin;
-
-    if (cpuOCval <= cpuMin || cpuOCval >= cpuMax)
+    if (mult < 1 || mult > maxMult)
     {
         return;
     }
 
-    cpuOCval += cpuMin * (double)incdec;
-
-    CPUConfigSpeed((int)(cpuOCval/cpuMin));
-    JoyStickConfigRecordState();
-    ConfigOKApply(0);
+    ConfigApplyCPUMultiplier((unsigned short)mult);
+    cpuOCval = (double)mult * cpuMin;
 }
 
 void ThrottleSpeedF8(AG_Event *ev)
@@ -318,6 +318,81 @@ void FullScreenF11(AG_Event *ev)
     ToggleFullScreen();
 }
 
+void ApplyVideoLayout(void)
+{
+    if (videoPane == NULL || mainEmuState == NULL || mainEmuState->fx == NULL)
+        return;
+
+    int W = AGWIDGET(videoPane)->w;
+    int H = AGWIDGET(videoPane)->h;
+    if (W <= 0 || H <= 0)
+        return;
+
+    if (SetAspectAGAR(QUERY))
+    {
+        int rw, rh;
+        if (W * 3 > H * 4)
+        {
+            rh = H;
+            rw = (H * 4) / 3;
+        }
+        else
+        {
+            rw = W;
+            rh = (W * 3) / 4;
+        }
+        AG_FixedMove(videoPane, mainEmuState->fx, (W - rw) / 2, (H - rh) / 2);
+        AG_FixedSize(videoPane, mainEmuState->fx, rw, rh);
+    }
+    else
+    {
+        AG_FixedMove(videoPane, mainEmuState->fx, 0, 0);
+        AG_FixedSize(videoPane, mainEmuState->fx, W, H);
+    }
+}
+
+void ApplyWindowResizeFlag(void)
+{
+    if (mainEmuState == NULL || mainEmuState->agwin == NULL)
+        return;
+
+    if (SetResizeAGAR(QUERY))
+    {
+        mainEmuState->agwin->flags &= ~AG_WINDOW_NORESIZE;
+    }
+    else
+    {
+        mainEmuState->agwin->flags |= AG_WINDOW_NORESIZE;
+        if (!mainEmuState->FullScreen && SetInfoBandAGAR(QUERY) && !enforcingResize &&
+            (AGWIDGET(mainEmuState->agwin)->w != 646 || AGWIDGET(mainEmuState->agwin)->h != 548))
+        {
+            enforcingResize = 1;
+            AG_WindowSetGeometry(mainEmuState->agwin, -1, -1, 646, 548);
+            enforcingResize = 0;
+        }
+    }
+}
+
+void ApplyInfoBandUI(int visible)
+{
+    if (statusBar == NULL || mainEmuState == NULL || mainEmuState->agwin == NULL)
+        return;
+
+    if (visible)
+        AG_WidgetShow(statusBar);
+    else
+        AG_WidgetHide(statusBar);
+
+    AG_WindowUpdate(mainEmuState->agwin);
+    ApplyVideoLayout();
+}
+
+void ApplyDisplaySettingsUI(void)
+{
+    ApplyWindowResizeFlag();
+    ApplyVideoLayout();
+}
+
 void Apply(AG_Event *event)
 {
 #define DO_CLOSE 1
@@ -328,6 +403,7 @@ void Apply(AG_Event *event)
     extern void ConfigOKApply(int);
 
     ConfigOKApply(OpenClose);
+    ApplyDisplaySettingsUI();
 
     if (OpenClose == DO_CLOSE)
     {
@@ -368,8 +444,9 @@ void UpdateSoundMeters(unsigned short left, unsigned short right)
 void CPUspeedChange(AG_Event *event)
 {
     extern void CPUConfigSpeed(int);
-
-    CPUConfigSpeed((int)(cpuOCval/cpuMin));
+    int mult = (int)lround(cpuOCval / cpuMin);
+    if (mult < 1) mult = 1;
+    CPUConfigSpeed(mult);
 }
 
 void MemSizeChange(AG_Event *event)
@@ -395,7 +472,14 @@ void MMUChange(AG_Event *event)
 #ifdef __MINGW32__
     if (MMU > 0)
     {
-        AG_TextMsg(AG_MSG_INFO, "Feature only available on Linux");
+        AG_TextMsg(AG_MSG_INFO, "Feature only available on Linux/Intel");
+        MMU = 0;
+        return;
+    }
+#else
+    if (MMU > 0 && sysconf(_SC_PAGESIZE) > 8192)
+    {
+        AG_TextMsg(AG_MSG_INFO, "Hardware MMU requires <= 8KB OS pages (unsupported on Apple Silicon)");
         MMU = 0;
         return;
     }
@@ -520,7 +604,7 @@ void LeftAnalogComboSelected(AG_Event *event)
 {
     AG_TlistItem *ti = AG_PTR(1);
 
-    AG_TextMsg(AG_MSG_INFO, "Feature no implemented!");
+    AG_TextMsg(AG_MSG_INFO, "Analog (audio) joystick is not implemented.");
 
     leftAnalogDevice = ti->u;
 }
@@ -672,7 +756,7 @@ void RightAnalogComboSelected(AG_Event *event)
 {
     AG_TlistItem *ti = AG_PTR(1);
 
-    AG_TextMsg(AG_MSG_INFO, "Feature no implemented!");
+    AG_TextMsg(AG_MSG_INFO, "Analog (audio) joystick is not implemented.");
 
     rightAnalogDevice = ti->u;
 }
@@ -823,7 +907,9 @@ void BrowseTape(AG_Event *event)
     AG_WindowSetCloseAction(fdw, AG_WINDOW_DETACH);
 
     AG_FileDlg *fd = AG_FileDlgNew(fdw, AG_FILEDLG_EXPAND | AG_FILEDLG_CLOSEWIN | AG_FILEDLG_MASK_EXT);
-    AG_FileDlgSetDirectory(fd, ".");
+    char mediaDir[MAX_PATH];
+    GetDefaultMediaDir(mediaDir, sizeof(mediaDir));
+    AG_FileDlgSetDirectory(fd, mediaDir);
 
 	AG_FileDlgAddType(fd, "CoCo Casette File", "*.cas,*.wav",	LoadCasette, NULL);
     AG_WindowShow(fdw);
@@ -831,11 +917,13 @@ void BrowseTape(AG_Event *event)
 
 void UpdateTapeWidgets(int counter, char mode, char *file)
 {
-    char modestr[2] = { mode, 0 };
+    static const char *modeNames[4] = { "STOP", "PLAY", "REC", "EJECT" };
+    unsigned char m = (unsigned char)mode;
+    const char *modestr = (m < 4) ? modeNames[m] : "STOP";
 
     tapecounter = counter;
     AG_Strlcpy(tapeMode, modestr, sizeof(tapeMode));
-    AG_Strlcpy(tapefile, file, sizeof(tapefile));
+    AG_Strlcpy(tapefile, (file && file[0]) ? file : "<No Tape File!>", sizeof(tapefile));
 }
 
 void SelectBitBangerFile(AG_Event *event)
@@ -864,7 +952,9 @@ void OpenBitBanger()
     AG_WindowSetCloseAction(fdw, AG_WINDOW_DETACH);
 
     AG_FileDlg *fd = AG_FileDlgNew(fdw, AG_FILEDLG_EXPAND | AG_FILEDLG_CLOSEWIN | AG_FILEDLG_MASK_EXT);
-    AG_FileDlgSetDirectory(fd, ".");
+    char mediaDir[MAX_PATH];
+    GetDefaultMediaDir(mediaDir, sizeof(mediaDir));
+    AG_FileDlgSetDirectory(fd, mediaDir);
 
 	AG_FileDlgAddType(fd, "CoCo BitBanger File", "*.bit,*.txt", SelectBitBangerFile, NULL);
     AG_WindowShow(fdw);
@@ -901,6 +991,7 @@ void BitBangerFn(AG_Event *event)
 
         case BITB_CLOSE:
             BitBangerConfigClose();
+            AG_Strlcpy(bitbangerfile, "<No Capture File!>", sizeof(bitbangerfile));
             PrintMonitor = 0;
             break;
 
@@ -988,6 +1079,7 @@ void PopulateDummyAnalogDevices(AG_Event *event)
 void PopulateJoystickDevices(AG_Event *event)
 {
     AG_Combo *com = AG_COMBO_SELF(); 
+    int targetIdx = AG_INT(1);
 
     int numOfSticks = 0, stick = 0, currentleft = 0, currentright;
     char **sticknames;
@@ -1007,7 +1099,7 @@ void PopulateJoystickDevices(AG_Event *event)
     leftJoystickDevice = currentleft;
     rightJoystickDevice = currentright;
 
-    AG_TlistItem *item = AG_TlistFindByIndex(com->list, LeftSDL.DiDevice+1);
+    AG_TlistItem *item = AG_TlistFindByIndex(com->list, targetIdx);
     if (item != NULL) AG_ComboSelect(com, item);
 }
 
@@ -1033,6 +1125,93 @@ void PopulateKeysList(AG_Event *event)
     if (item != NULL) AG_ComboSelect(com, item);
 }
 
+static void SelectExternalBasicFile(AG_Event *event)
+{
+    char *file = AG_STRING(1);
+    AG_Strlcpy(externalBasicRom, file, sizeof(externalBasicRom));
+    MiscConfigExternalBasic(externalBasicRom);
+}
+
+static void BrowseExternalBasic(AG_Event *event)
+{
+    AG_Window *fdw = AG_WindowNew(0);
+    AG_WindowSetCaption(fdw, "Select External BASIC ROM");
+    AG_WindowSetGeometryAligned(fdw, AG_WINDOW_ALIGNMENT_NONE, 500, 500);
+    AG_WindowSetCloseAction(fdw, AG_WINDOW_DETACH);
+
+    AG_FileDlg *fd = AG_FileDlgNew(fdw, AG_FILEDLG_EXPAND | AG_FILEDLG_CLOSEWIN | AG_FILEDLG_MASK_EXT);
+    char mediaDir[MAX_PATH];
+    GetDefaultMediaDir(mediaDir, sizeof(mediaDir));
+    AG_FileDlgSetDirectory(fd, mediaDir);
+
+    AG_FileDlgAddType(fd, "CoCo BASIC ROM", "*.rom,*.bin", SelectExternalBasicFile, NULL);
+    AG_WindowShow(fdw);
+}
+
+static void ClearExternalBasic(AG_Event *event)
+{
+    externalBasicRom[0] = '\0';
+    MiscConfigExternalBasic("");
+}
+
+static void SyncKeyComboLabel(AG_Combo *com, unsigned short scanCode)
+{
+    extern unsigned short TranslateScan2Disp(int);
+    int nkeys = (int)(sizeof(keyNames) / sizeof(keyNames[0]));
+    unsigned short disp = TranslateScan2Disp(scanCode);
+    if (com != NULL && disp < nkeys)
+        AG_TextboxSetString(com->tbox, keyNames[disp]);
+}
+
+static void SyncOptionsWidgets(void)
+{
+    static const char *rateLabels[4] = { "Mute", "11025", "22050", "44100" };
+    char devName[CARDNAME_LEN] = "";
+    int numOfSticks = 0, curL = 0, curR = 0;
+    char **stickNames = NULL;
+    extern void AudioConfigGetJoyStickDevices(int *, int *, int *, char **[]);
+
+    soundDev = (int)CurrentConfig.SndOutDev;
+    soundQuality = AudioConfigGetRate() & 3;
+    AudioConfigGetDeviceName(soundDev, devName, sizeof(devName));
+    if (comDev != NULL)
+        AG_TextboxSetString(comDev->tbox, devName[0] ? devName : "(Default)");
+    if (comQual != NULL)
+        AG_TextboxSetString(comQual->tbox, rateLabels[soundQuality]);
+
+    leftJoystick = (int)LeftSDL.UseMouse;
+    leftEmulation = (int)LeftSDL.HiRes;
+    leftJoystickDevice = (int)LeftSDL.DiDevice;
+    rightJoystick = (int)RightSDL.UseMouse;
+    rightEmulation = (int)RightSDL.HiRes;
+    rightJoystickDevice = (int)RightSDL.DiDevice;
+
+    AudioConfigGetJoyStickDevices(&numOfSticks, &curL, &curR, &stickNames);
+    if (comLeftJoystick != NULL)
+        AG_TextboxSetString(comLeftJoystick->tbox,
+            (LeftSDL.DiDevice < numOfSticks && stickNames && stickNames[LeftSDL.DiDevice]) ? stickNames[LeftSDL.DiDevice] : "(None)");
+    if (comRightJoystick != NULL)
+        AG_TextboxSetString(comRightJoystick->tbox,
+            (RightSDL.DiDevice < numOfSticks && stickNames && stickNames[RightSDL.DiDevice]) ? stickNames[RightSDL.DiDevice] : "(None)");
+
+    SyncKeyComboLabel(comLeftKeyLeft, LeftSDL.Left);
+    SyncKeyComboLabel(comLeftKeyRight, LeftSDL.Right);
+    SyncKeyComboLabel(comLeftKeyUp, LeftSDL.Up);
+    SyncKeyComboLabel(comLeftKeyDown, LeftSDL.Down);
+    SyncKeyComboLabel(comLeftKeyFire1, LeftSDL.Fire1);
+    SyncKeyComboLabel(comLeftKeyFire2, LeftSDL.Fire2);
+
+    SyncKeyComboLabel(comRightKeyLeft, RightSDL.Left);
+    SyncKeyComboLabel(comRightKeyRight, RightSDL.Right);
+    SyncKeyComboLabel(comRightKeyUp, RightSDL.Up);
+    SyncKeyComboLabel(comRightKeyDown, RightSDL.Down);
+    SyncKeyComboLabel(comRightKeyFire1, RightSDL.Fire1);
+    SyncKeyComboLabel(comRightKeyFire2, RightSDL.Fire2);
+
+    LeftJoystickChange(NULL);
+    RightJoystickChange(NULL);
+}
+
 void Configure(AG_Event *ev)
 {
     char path[AG_PATHNAME_MAX];
@@ -1052,14 +1231,19 @@ void Configure(AG_Event *ev)
     throttleSpeed = (int)CurrentConfig.SpeedThrottle;
     autoStartEmu = (int)CurrentConfig.AutoStart;
     autoStartCart = (int)CurrentConfig.CartAutoStart;
+    AG_Strlcpy(externalBasicRom, CurrentConfig.ExternalBasicImage, sizeof(externalBasicRom));
     MemSize = (int)CurrentConfig.RamSize;
     CPU = (int)CurrentConfig.CpuType;
     MMU = (int)CurrentConfig.MmuType;
     keyboardMap = (int)CurrentConfig.KeyMap;
     cpuOCval = (double)CurrentConfig.CPUMultiplyer * cpuMin;
+    rightEmulation = (int)RightSDL.HiRes;
 
     if (win != NULL)
     {
+        extern void JoyStickConfigRecordState();
+        JoyStickConfigRecordState();
+        SyncOptionsWidgets();
         AG_WindowShow(win);
         return;
     }
@@ -1327,7 +1511,7 @@ void Configure(AG_Event *ev)
         // Left Joystick Digital Combo
 
         com = comLeftJoystick = AG_ComboNew(vbox2, AG_COMBO_HFILL, NULL);
-        AG_SetEvent(com, "combo-expanded", PopulateJoystickDevices, NULL);
+        AG_SetEvent(com, "combo-expanded", PopulateJoystickDevices, "%i", LeftSDL.DiDevice+1);
         AG_SetEvent(com, "combo-selected", LeftJoystickComboSelected, NULL);
         if (leftJoystick == JOYSTICK_JOYSTICK) AG_WidgetEnable(com); else AG_WidgetDisable(com);
 
@@ -1491,6 +1675,13 @@ void Configure(AG_Event *ev)
 
         xb = AG_CheckboxNewFn(vbox, 0, "AutoStart Cart", AutoStartCartChange, NULL);
         AG_BindInt(xb, "state", &autoStartCart);
+
+        AG_Box *romBox = AG_BoxNewVert(tab, AG_BOX_HFILL | AG_BOX_FRAME);
+        AG_LabelNew(romBox, 0, "External BASIC ROM (optional, requires Hard Reset)");
+        AG_Box *romRow = AG_BoxNewHoriz(romBox, AG_BOX_HFILL);
+        AG_LabelNewPolled(romRow, AG_LABEL_HFILL | AG_LABEL_FRAME, "%s", externalBasicRom);
+        AG_ButtonNewFn(romRow, 0, "Browse", BrowseExternalBasic, NULL);
+        AG_ButtonNewFn(romRow, 0, "Clear", ClearExternalBasic, NULL);
     }
 
     tab = AG_NotebookAdd(nb, "Tape", AG_BOX_VERT);
@@ -1563,6 +1754,7 @@ void Configure(AG_Event *ev)
         //AG_ButtonNewFn(hb, 0, "Cancel", AGWINDETACH(win));
     }
 
+    SyncOptionsWidgets();
     AG_WindowShow(win);
 
     return;
@@ -1624,7 +1816,10 @@ static void LoadCart(AG_Event *event)
     AG_WindowSetCloseAction(fdw, AG_WINDOW_DETACH);
 
     AG_FileDlg *fd = AG_FileDlgNew(fdw, AG_FILEDLG_EXPAND | AG_FILEDLG_CLOSEWIN | AG_FILEDLG_MASK_EXT);
-    AG_FileDlgSetDirectory(fd, ".");
+    char pakDir[MAX_PATH];
+    if (!GetPakSearchDir(pakDir, sizeof(pakDir)))
+        GetDefaultMediaDir(pakDir, sizeof(pakDir));
+    AG_FileDlgSetDirectory(fd, pakDir);
 
 	AG_FileDlgAddType(fd, "CoCo Pak or Cartridge", "*.rom,*.ccc,*.so,*.dll",	LoadPack, "%p", state);
     AG_WindowShow(fdw);
@@ -1757,9 +1952,9 @@ void KeyDownUp(AG_Event *event)
     switch (kb) {
     case AG_KEY_A - 0x20 ... AG_KEY_Z - 0x20:
         kb += 0x20;
-        if (capslocked)
+        if (capslocked && !(mod & (AG_KEYMOD_LSHIFT | AG_KEYMOD_RSHIFT)))
         {
-            // fake a shift key
+            // fake a shift key only when real Shift isn't held
             DoKeyBoardEvent(uc, AG_KEY_LSHIFT, updown);
             XTRACE("faked a SHIFT key\n");
         }
@@ -1768,12 +1963,12 @@ void KeyDownUp(AG_Event *event)
         break;
     }
 
-    // make the ctrl-alpha keys work
+    // make the ctrl-alpha keys work (0x01..0x1a -> 'a'..'z')
     if (mod & (AG_KEYMOD_LCTRL | AG_KEYMOD_RCTRL))
     {
         switch (kb)
         {
-        case AG_KEY_ASCII_START ... AG_KEY_ESCAPE:
+        case 0x01 ... 0x1a:
             kb += 0x60;
             break;
         default:
@@ -1840,9 +2035,21 @@ void ShowStartupWizard(AG_Event *event)
     RunStartupWizard(state, 0); // 0: menu-triggered -- hot-swaps the running config, doesn't reboot the thread.
 }
 
+static void VideoPaneReshaped(AG_Event *event)
+{
+    ApplyVideoLayout();
+}
+
+static void MainWindowReshaped(AG_Event *event)
+{
+    ApplyWindowResizeFlag();
+    ApplyVideoLayout();
+}
+
 void DecorateWindow(SystemState2 *EmuState2)
 {
     AG_Window *win = EmuState2->agwin;
+    mainEmuState = EmuState2;
 
 	// Menus
 
@@ -1882,11 +2089,17 @@ void DecorateWindow(SystemState2 *EmuState2)
         AG_MenuAction(itemHelp, "About OVCC", NULL, About, NULL);
     }
 
-    // The primary CoCo drawing surface is the surface of a rescalable Pixmap widget.
+    // The primary CoCo drawing surface is the surface of a rescalable Pixmap widget
+    // hosted inside an expanding AG_Fixed container so Force Aspect can letterbox it.
 
     AG_Surface *flip = AG_SurfaceRGB(640, 480, 32, AG_SURFACE_PACKED /*| AG_SURFACE_MAPPED */, 0xFF, 0xFF00, 0xFF0000);
 
-    AG_Pixmap *fx = AG_PixmapFromSurface(win, AG_PIXMAP_EXPAND | AG_PIXMAP_RESCALE, flip);
+    videoPane = AG_FixedNew(win, AG_FIXED_EXPAND | AG_FIXED_NO_UPDATE);
+    AG_FixedSizeHint(videoPane, 640, 480);
+
+    AG_Pixmap *fx = AG_PixmapFromSurface(videoPane, AG_PIXMAP_RESCALE, flip);
+    AG_FixedPut(videoPane, fx, 0, 0);
+    AG_FixedSize(videoPane, fx, 640, 480);
     AG_PixmapSetSurface(fx, 0); // set surface to 1 but pixels to surface 0
     AG_BindInt(fx, "redrawfx", &redrawfx);
     AG_RedrawOnChange(fx, 1000/60, "redrawfx");
@@ -1898,7 +2111,7 @@ void DecorateWindow(SystemState2 *EmuState2)
 
     // The Status Bar
 
-    AG_Statusbar *statusBar = AG_StatusbarNew(win, AG_BOX_FRAME | AG_STATUSBAR_HFILL);
+    statusBar = AG_StatusbarNew(win, AG_BOX_FRAME | AG_STATUSBAR_HFILL);
     status = AG_StatusbarAddLabel(statusBar, "Ready");
 }
 
@@ -1950,6 +2163,9 @@ void PrepareEventCallBacks(SystemState2 *EmuState2)
 	AG_SetEvent(EmuState2->fx, "mouse-button-down", ButtonDownUp, "%i", AG_BUTTON_PRESSED);
 	AG_SetEvent(EmuState2->fx, "mouse-button-up", ButtonDownUp, "%i", AG_BUTTON_RELEASED);
     AG_SetEvent(EmuState2->fx, "lock-texture", LockTexture, "%p", EmuState2);
+    if (videoPane != NULL)
+        AG_SetEvent(videoPane, "widget-reshape", VideoPaneReshaped, NULL);
+    AG_SetEvent(EmuState2->agwin, "widget-reshape", MainWindowReshaped, NULL);
     AG_SetEvent(EmuState2->agwin, "window-detached", WindowDetached, "%p", EmuState2);
 
    // VCC Hot FN Keys

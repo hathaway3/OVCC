@@ -20,15 +20,15 @@ $(ODIR)/config.o: config.c iniman.h config.h defines.h resource.h tcc1014graphic
 		mc6821.h audio.h tcc1014mmu.h joystickinputSDL.h vcc.h fileops.h \
 		pakinterface.h keyboard.h cassette.h
 
-$(ODIR)/vccgui.o: vccgui.c defines.h joystickinputSDL.h keyboard.h audio.h config.h 
+$(ODIR)/vccgui.o: vccgui.c defines.h joystickinputSDL.h keyboard.h audio.h config.h wizard.h fileops.h AGARInterface.h
 
-$(ODIR)/fileops.o: fileops.c fileops.h
+$(ODIR)/fileops.o: fileops.c fileops.h defines.h
 
 $(ODIR)/hd6309.o: hd6309.c hd6309.h hd6309defs.h tcc1014mmu.h logger.h
 
 $(ODIR)/iobus.o: iobus.c defines.h iobus.h mc6821.h pakinterface.h tcc1014registers.h tcc1014mmu.h logger.h config.h
 
-$(ODIR)/logger.o: logger.c logger.h
+$(ODIR)/logger.o: logger.c logger.h defines.h fileops.h tcc1014mmu.h
 
 $(ODIR)/mc6809.o: mc6809.c mc6809.h mc6809defs.h tcc1014mmu.h
 

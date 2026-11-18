@@ -196,7 +196,6 @@ void port_write(unsigned char data,unsigned short addr)
 		case 0x23:
 			pia1_write(data,port);	//MC6821 P.I.A	Sound and VDG Control 
 		break;
-#define DEBUGPORT 1
 #ifdef  DEBUGPORT
 		case 0x70:
 		    if (debug) fputc((int)data, stderr);

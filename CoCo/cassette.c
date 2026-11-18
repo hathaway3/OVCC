@@ -225,7 +225,10 @@ int MountTape( char *FileName)	//Return 1 on sucess 0 on fail
 	AG_Seek(TapeHandle, 0, AG_SEEK_END);
 	TotalSize = AG_Tell(TapeHandle);
 	TapeOffset=0;
-	strcpy(Extension,&FileName[strlen(FileName)-3]);
+	AG_Strlcpy(TapeFileName, FileName, sizeof(TapeFileName));
+	size_t fnlen = strlen(FileName);
+	if (fnlen >= 3)
+		strcpy(Extension, &FileName[fnlen - 3]);
 	for (Index=0;Index<strlen(Extension);Index++)
 		Extension[Index]=toupper(Extension[Index]);
 

@@ -31,5 +31,6 @@ void SetTimerClockRate (unsigned char);
 void SetInteruptTimer(unsigned short);
 void MiscReset(void);
 unsigned short SetAudioRate (unsigned short);
+void SelectCPUExec(SystemState2 *);
 
 #endif

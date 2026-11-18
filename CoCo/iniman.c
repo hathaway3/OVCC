@@ -52,7 +52,7 @@ static INIfile *recordFile(char *filename)
 {
     if (iniman->fileCnt % FILEBUCKETSIZE == 0) 
     {
-        iniman->files = realloc(iniman->files, FILEBUCKETSIZE * sizeof(INIman) * (int)(iniman->fileCnt/FILEBUCKETSIZE+1));
+        iniman->files = realloc(iniman->files, FILEBUCKETSIZE * sizeof(INIfile) * (int)(iniman->fileCnt/FILEBUCKETSIZE+1));
     }
 
     iniman->files[iniman->fileCnt].name = strdup(filename);
@@ -109,6 +109,7 @@ static void BackupINIfile(INIfile *inifile)
     if (inputFd == NULL)
     {
         printf("iniman : backup error opening ini file %s", inifile->name);
+        return;
     }
 
     strcpy(backupininame, inifile->name);
@@ -118,6 +119,8 @@ static void BackupINIfile(INIfile *inifile)
     if (outputFd == NULL)
     {
         printf("iniman : backup error opening backup file %s", backupininame);
+        fclose(inputFd);
+        return;
     }
 
     /* Transfer data until we encounter end of input or an error */
@@ -558,7 +561,7 @@ bool DuplicatePrivateProfile(char *filename, char *newfilename)
     newinifile->sectionCnt = inifile->sectionCnt;
 
     if (inifile->sectionCnt == 0) return true;
-    size = ((inifile->sectionCnt%SECTIONBUCKETSIZE)+1)*SECTIONBUCKETSIZE;
+    size = ((inifile->sectionCnt / SECTIONBUCKETSIZE) + 1) * SECTIONBUCKETSIZE * sizeof(INIsection);
     newinifile->sections = malloc(size);
     memset(newinifile->sections, 0, size);
 
@@ -573,7 +576,7 @@ bool DuplicatePrivateProfile(char *filename, char *newfilename)
 
         if (!inifile->sections[isection].entryCnt) continue;
 
-        size = ((inifile->sections[isection].entryCnt%ENTRYBUCKETSIZE)+1)*ENTRYBUCKETSIZE;
+        size = ((inifile->sections[isection].entryCnt / ENTRYBUCKETSIZE) + 1) * ENTRYBUCKETSIZE * sizeof(INIentry);
         newinifile->sections[isection].entries = malloc(size);
         memset(newinifile->sections[isection].entries, 0, size);
 

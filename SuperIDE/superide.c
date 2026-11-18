@@ -248,7 +248,9 @@ void BrowseHardDisk(AG_Event *event)
     AG_WindowSetCloseAction(fdw, AG_WINDOW_DETACH);
 
     AG_FileDlg *fd = AG_FileDlgNew(fdw, AG_FILEDLG_EXPAND | AG_FILEDLG_CLOSEWIN | AG_FILEDLG_MASK_EXT);
-    AG_FileDlgSetDirectory(fd, ".");
+    char mediaDir[MAX_PATH];
+    GetDefaultMediaDir(mediaDir, sizeof(mediaDir));
+    AG_FileDlgSetDirectory(fd, mediaDir);
 
 	AG_FileDlgAddType(fd, "Disk Images", "*.img,*.dsk,*.os9,*.vhd",	LoadHardDisk, "%i", disk);
     AG_WindowShow(fdw);

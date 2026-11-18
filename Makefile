@@ -23,10 +23,9 @@ $(DIRS):
 install: ACTION = install
 install: subdirs
 ifeq ($(TARGETOS),Darwin)
-	# Bumps the bundle directory's own mtime so Finder/LaunchServices notices
-	# the bundle changed and refreshes its cached icon/Info.plist metadata --
-	# without this, a rebuilt app can keep showing a stale icon or version in
-	# Finder even though Contents/ was just updated by the module installs above.
+	# Re-sign after all PlugIns/Frameworks are installed (CoCo's install runs first),
+	# then bump the bundle's own mtime so Finder/LaunchServices refreshes metadata.
+	codesign --force --deep -s - ovcc.app
 	touch ovcc.app
 endif
 

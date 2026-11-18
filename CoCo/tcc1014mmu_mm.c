@@ -33,6 +33,7 @@ This file is part of OVCC (Open Virtual Color Computer).
 #include "fileops.h"
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #define handle_error(msg) do { perror(msg) ; exit(EXIT_FAILURE);} while (0)
 
@@ -72,7 +73,8 @@ static UINT16 MmuPrefix=0;
 #define PAKExtMemOffset (RomMemOffset + CoCoROMSize)
 #define TotalMMmemSize (MemConfig[CurrentRamConfig]+CoCoROMSize)
 
-static int CoCoMemFD;
+static int CoCoMemFD = -1;
+static char CoCoMemShmName[64] = "";
 
 static PUINT8 ptrCoCoFullMem = NULL, ptrCoCoTask0Mem = NULL, ptrCoCoTask1Mem = NULL, ptrCoCoRomMem = NULL, ptrCoCoPakExtMem = NULL,
 	ptrTasks[MMUBankMax],
@@ -168,6 +170,8 @@ static void freePhysicalMemPages()
 		if (MMUbank[1][pageCnt] != NULL) munmap(MMUbank[1][pageCnt], CoCoPageSize);
 		MMUbank[0][pageCnt] = NULL;
 		MMUbank[1][pageCnt] = NULL;
+		MMUpages[0][pageCnt] = 0xFFFF;
+		MMUpages[1][pageCnt] = 0xFFFF;
 	}
 
 	if(ptrCoCoRomMem != NULL) munmap(ptrCoCoRomMem, CoCoROMSize);
@@ -175,6 +179,11 @@ static void freePhysicalMemPages()
 	if(ptrCoCoTask0Mem != NULL) munmap(ptrCoCoTask0Mem, Mem64kSize);
 	if(ptrCoCoTask1Mem != NULL) munmap(ptrCoCoTask1Mem, Mem64kSize);
 	if(ptrCoCoFullMem != NULL) munmap(ptrCoCoFullMem, TotalMMmemSize);
+
+	if (CoCoMemFD >= 0) {
+		close(CoCoMemFD);
+		CoCoMemFD = -1;
+	}
 
 	ptrCoCoRomMem = NULL;
 	ptrCoCoPakExtMem = NULL;
@@ -312,7 +321,9 @@ static unsigned char *Create32KROMMemory()
 
 static PUINT8 Create64KVirtualMemory(UINT32 ramsize)
 {
-	CoCoMemFD = shm_open("/CoCoMem", O_RDWR | O_CREAT | O_EXCL, 0600);
+	snprintf(CoCoMemShmName, sizeof(CoCoMemShmName), "/CoCoMem_%d", (int)getpid());
+	shm_unlink(CoCoMemShmName);
+	CoCoMemFD = shm_open(CoCoMemShmName, O_RDWR | O_CREAT | O_EXCL, 0600);
 
 	if (CoCoMemFD == -1)
 	{
@@ -322,7 +333,7 @@ static PUINT8 Create64KVirtualMemory(UINT32 ramsize)
 
 	off_t totalramromsize = ramsize + CoCoROMSize + CoCoPAKExtROMSize;
 
-	shm_unlink("/CoCoMem");
+	shm_unlink(CoCoMemShmName);
 	ftruncate(CoCoMemFD, totalramromsize);
 
 	ptrCoCoFullMem = (PUINT8)mmap(NULL, totalramromsize, PROT_READ | PROT_WRITE, MAP_SHARED, CoCoMemFD, 0);

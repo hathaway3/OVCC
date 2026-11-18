@@ -250,8 +250,10 @@ unsigned char WriteIniFile(void)
 
 unsigned char SaveCurrentConfigToFile(char *newfilename)
 {
-	DuplicatePrivateProfile(IniFilePath, newfilename);
+	if (!DuplicatePrivateProfile(IniFilePath, newfilename))
+		return 0;
 	WriteNamedIniFile(newfilename);
+	return AG_FileExists(newfilename) ? 1 : 0;
 }
 
 void UpdateOnBoot(char *modname)
@@ -392,7 +394,10 @@ void ConfigOKApply(int close)
 {
 	EmuState2.ResetPending=4;
 
-	if ((CurrentConfig.RamSize != TempConfig.RamSize) || (CurrentConfig.CpuType != TempConfig.CpuType) || (CurrentConfig.MmuType != TempConfig.MmuType))
+	if ((CurrentConfig.RamSize != TempConfig.RamSize) ||
+	    (CurrentConfig.CpuType != TempConfig.CpuType) ||
+	    (CurrentConfig.MmuType != TempConfig.MmuType) ||
+	    (strcmp(CurrentConfig.ExternalBasicImage, TempConfig.ExternalBasicImage) != 0))
 	{
 		EmuState2.ResetPending=2;
 	}
@@ -408,6 +413,9 @@ void ConfigOKApply(int close)
 
 	RightSDL = TempRight;
 	LeftSDL = TempLeft;
+
+	EmuState2.MouseType = LeftSDL.HiRes | RightSDL.HiRes;
+	SelectCPUExec(&EmuState2);
 
 	SetStickNumbersSDL(LeftSDL.DiDevice,RightSDL.DiDevice);
 }
@@ -495,6 +503,31 @@ void MiscConfigAutoStart(int start)
 void MiscConfigCartAutoStart(int start)
 {
 	TempConfig.CartAutoStart = (unsigned char)start;
+}
+
+void MiscConfigExternalBasic(const char *path)
+{
+	AG_Strlcpy(TempConfig.ExternalBasicImage, path ? path : "", sizeof(TempConfig.ExternalBasicImage));
+}
+
+void ConfigApplyCPUMultiplier(unsigned short mult)
+{
+	CurrentConfig.CPUMultiplyer = mult;
+	TempConfig.CPUMultiplyer = mult;
+	SetCPUMultiplyer(mult);
+}
+
+int AudioConfigGetRate(void)
+{
+	return (int)CurrentConfig.AudioRate;
+}
+
+void AudioConfigGetDeviceName(int dev, char *out, size_t maxLen)
+{
+	if (dev >= 0 && dev < NumberOfSoundCards)
+		AG_Strlcpy(out, SoundCards[dev].CardName, maxLen);
+	else if (maxLen > 0)
+		out[0] = '\0';
 }
 
 void TapeConfigButton(int button)
@@ -592,9 +625,6 @@ void JoyStickConfigLeftJoyStick(int type)
 void JoyStickConfigLeftEmulation(int type)
 {
 	TempLeft.HiRes = (unsigned char)type;
-	extern void SelectCPUExec(SystemState2*);
-	EmuState2.MouseType = type;
-	SelectCPUExec(&EmuState2);
 }
 
 void JoyStickConfigLeftJoyStickDevice(int dev)
@@ -721,13 +751,13 @@ return;
 
 void RefreshJoystickStatus(void)
 {
-	NumberofJoysticks = EnumerateJoysticksSDL();
+	NumberofJoysticks = (unsigned char)EnumerateJoysticksSDL();
 
-	if (RightSDL.DiDevice>(NumberofJoysticks-1))
+	if (NumberofJoysticks == 0 || RightSDL.DiDevice >= NumberofJoysticks)
 	{
 		RightSDL.DiDevice=0;
 	}
-	if (LeftSDL.DiDevice>(NumberofJoysticks-1))
+	if (NumberofJoysticks == 0 || LeftSDL.DiDevice >= NumberofJoysticks)
 	{
 		LeftSDL.DiDevice=0;
 	}

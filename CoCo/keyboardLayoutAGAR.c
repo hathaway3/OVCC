@@ -202,7 +202,7 @@ keytranslationentry_t keyTranslationsCoCoAGAR[] =
 	{ AG_KEY_DOLLAR,     AG_KEY_LSHIFT, 16,     4,    64,    7 }, //   $
 	{ AG_KEY_PERCENT,    AG_KEY_LSHIFT, 16,     5,    64,    7 }, //   %
 	{ AG_KEY_AMPERSAND,  AG_KEY_LSHIFT, 16,     6,    64,    7 }, //   &
-	{ AG_KEY_QUOTE,      AG_KEY_LSHIFT, 16,     7,    64,    7 }, //   '
+	{ AG_KEY_QUOTE,      0,             16,     7,    64,    7 }, //   '
 	{ AG_KEY_LEFTPAREN,  AG_KEY_LSHIFT, 32,     0,    64,    7 }, //   (
 	{ AG_KEY_RIGHTPAREN, AG_KEY_LSHIFT, 32,     1,    64,    7 }, //   )
 	{ AG_KEY_ASTERISK,   AG_KEY_LSHIFT, 32,     2,    64,    7 }, //   *
@@ -306,7 +306,6 @@ keytranslationentry_t keyTranslationsNaturalAGAR[] =
 	{ AG_KEY_DOLLAR,     AG_KEY_LSHIFT, 16,     4,    64,    7 }, //   $
 	{ AG_KEY_PERCENT,    AG_KEY_LSHIFT, 16,     5,    64,    7 }, //   %
 	{ AG_KEY_AMPERSAND,  AG_KEY_LSHIFT, 16,     6,    64,    7 }, //   &
-	{ AG_KEY_QUOTE,      AG_KEY_LSHIFT, 16,     7,    64,    7 }, //   '
 	{ AG_KEY_LEFTPAREN,  AG_KEY_LSHIFT, 32,     0,    64,    7 }, //   (
 	{ AG_KEY_RIGHTPAREN, AG_KEY_LSHIFT, 32,     1,    64,    7 }, //   )
 	{ AG_KEY_ASTERISK,   AG_KEY_LSHIFT, 32,     2,    64,    7 }, //   *
@@ -468,7 +467,6 @@ keytranslationentry_t keyTranslationsCompactAGAR[] =
 	{ AG_KEY_DOLLAR,     AG_KEY_LSHIFT, 16,     4,    64,    7 }, //   $
 	{ AG_KEY_PERCENT,    AG_KEY_LSHIFT, 16,     5,    64,    7 }, //   %
 	{ AG_KEY_AMPERSAND,  AG_KEY_LSHIFT, 16,     6,    64,    7 }, //   &
-	{ AG_KEY_QUOTE,      AG_KEY_LSHIFT, 16,     7,    64,    7 }, //   '
 	{ AG_KEY_LEFTPAREN,  AG_KEY_LSHIFT, 32,     0,    64,    7 }, //   (
 	{ AG_KEY_RIGHTPAREN, AG_KEY_LSHIFT, 32,     1,    64,    7 }, //   )
 	{ AG_KEY_ASTERISK,   AG_KEY_LSHIFT, 32,     2,    64,    7 }, //   *

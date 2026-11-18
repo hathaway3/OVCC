@@ -38,14 +38,14 @@ int EnumerateJoysticksSDL(void)
 	int JoyStickIndex=0;
 	int maxJoyStick = SDL_NumJoysticks();
 
-	for (JoyStickIndex = 0 ; JoyStickIndex < maxJoyStick ; JoyStickIndex++ )
+	for (JoyStickIndex = 0 ; JoyStickIndex < maxJoyStick && JoyStickIndex < MAXSTICKS ; JoyStickIndex++ )
 	{
 		//strcpy(StickName[JoyStickIndex], SDL_JoystickNameForIndex(JoyStickIndex));
-		StickName[JoyStickIndex] = SDL_JoystickNameForIndex(JoyStickIndex);
+		StickName[JoyStickIndex] = (char *)SDL_JoystickNameForIndex(JoyStickIndex);
 		Joysticks[JoyStickIndex] = SDL_JoystickOpen(JoyStickIndex);
 	}
 
-	return maxJoyStick;
+	return JoyStickIndex;
 }
 
 bool InitJoyStickSDL(unsigned char StickNumber)
@@ -64,10 +64,14 @@ bool InitJoyStickSDL(unsigned char StickNumber)
 
 void JoyStickPollSDL(SDL_Joystick **js, unsigned char StickNumber)
 {
-	if (Joysticks[StickNumber] == NULL)
+	SDL_JoystickUpdate();
+	if (StickNumber >= MAXSTICKS || Joysticks[StickNumber] == NULL)
+	{
+		*js = NULL;
 		return;
+	}
 
 	*js = Joysticks[StickNumber];
 
-return;
+	return;
 }
